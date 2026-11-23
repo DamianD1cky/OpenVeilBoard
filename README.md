@@ -1,234 +1,70 @@
-# VeilBoard · 帷幕告示板
+# OpenVeilBoard
 
-（原名 `Hamburger Protect`）一个支持 GM 自由排版、面向多规则跑团的实时协作桌面公告板。GM 可以创建战役、自由拖拽编排模块、发布任务委托与事件钟、维护共享场景；玩家可以认领委托、更新公共物资与检查项、张贴照片便签并用红绳连线梳理现场线索，在同一桌面内使用独立 3D 物理骰盘投掷各类规则公式。
+一间房，一张实体台面。以 `branch/veilboard` 的自研 WebGPU 引擎重建，账号与房间权限复用 `branch/Hamburger_Protect`。
 
-新创建的战役默认采用中性的「帷幕软木 + 木框」外观与通用跑团称呼；同时内置保留了经典的「危机营业（保卫汉堡店）」可选主题包，历史房间存档与状态刻度完全无损兼容。
+## 运行
 
-代码采用 MIT License。仓库附带的原创美术资源采用 CC BY-NC 4.0，仅允许非商业使用。详见[许可说明](#许可)。
-
-## 在线体验
-
-- VeilBoard 独立站：<https://veilboard.damiandicky.site>
-- 现有站点：<https://hamburger.damiandicky.site>
-- 现有备用入口：<https://hamburger-protect.vercel.app>
-
-在线环境包含真实账号和共享数据。只想查看界面或参与开发时，建议先使用本地演示模式。
-
-## 主要功能
-
-- **站内使用指南**：登录页可在注册前打开“使用指南”，公告板顶部问号打开同一份帮助。支持按章节阅读和搜索到具体操作段落，关闭后继续原来的页面。内容由 [新用户帮助原稿](assets/help/user-guide.md) 统一维护，按需加载。
-
-- **多人战役**：GM 创建战役并审批玩家加入，同一账号可以在不同战役拥有不同角色。
-- **共享公告板**：16∶9 固定板面，支持桌面和手机自动适配。
-- **任务流程**：发布、领取、提交、审核、退回重试和完成归档。
-- **房间管理**：成员审批、角色资料、战役归档、公开参观和访客留言。
-- **站长审批**：被明确授权的站长登录后，可在账号设置旁打开“GM 申请审批”，批准或拒绝申请、填写备注并查看处理记录。首次站长授权见 [运维说明](supabase/OPERATIONS.md#站长与-gm-审批)。
-- **自由便签**：创建、编辑、拖动、排序、换色、图钉、连线与关系说明。
-- **板面物件**：可移动业务模块、Emoji 贴纸和共享工作记录。贴纸悬停或点选后用 −／＋ 调整为 50%–250%，旋转按钮每次调整 15°，支持完整一圈；点击百分比或角度恢复大小或方向，位置、尺寸与角度在战役内共享保存。
-- **分层主题**：房间背景、板面材质和边框独立配置，支持自定义图片。
-- **透视场景背景**：房间配置可选路口或车站，切换动态/静态显示，保留暗化和焦点设置。Canvas 几何按需加载，无视频下载；后台、打开对话框或拖动公告板时暂停，系统减少动态效果时显示静态画面。
-- **权限隔离**：Supabase Auth、PostgreSQL、RLS、受控 RPC 和私有 Storage。
-- **移动端导航**：手机按物资、任务、排班、防御和记录区域快速切换。
-- **统一模块界面**：模块采用一致的纸质卡片与“标题、编辑、隐藏”标题栏。编辑窗中的标题、底色和恢复默认固定在通用外观区，物资分类、检查项、事件钟等放在独立内容区并分别保存；颜色统一支持取色器和十六进制输入。任务新增与业务操作位于卡片内，原有内容类型和成员权限保留。
-- **共享战役时钟**：GM 可设置时钟、倒计时或正计时，自定义纪元与纪年，并切换辉光管、石英和数字样式。
-- **事件钟**：每个事件钟独立成卡片，同时展示；新卡片优先放入空位，GM 可单独拖动和编辑，其他卡片的位置与进度保留。支持名称、2–24 格、起始进度、颜色与填满后的后果；直接加减进度，填满时高亮并记入工作记录，回退后解除高亮；玩家只读。手机通过底部“事件”聚焦具体卡片。旧汉堡屋指数保留原分级和数值，新战役不再默认绑定汉堡店规则。
-- **独立 3D 骰盘**：点击右下角打开木框毛毡六边形骰盘。所有骰型使用自制圆角几何，d6 使用凹陷点数，其他字面来自可替换的共享图集；支持青玉、象牙、黑曜石和霓虹皮肤。d100 用两颗 d10 表示，十位骰显示 00–90，两颗都为 0 表示 100；Fate 和暗骰有各自字面，暗骰不显示结果。点击骰子弹出扇形菜单，选中时沿骰子轮廓显示辉光。“加一颗”子菜单可选所有骰型，新骰子自动放在空位。鼠标拖框多选，Shift 拖框追加，Shift / Ctrl / ⌘ 点击切换选择；选中骰子可统一设置总修正、用途和可见性，或按住任一选中骰子约 350 毫秒后拖起、松手投掷，Esc 取消。拖动方向和速度影响物理轨迹，点数由服务器裁定，其余骰子保留位置与点数。右上角“更多”提供公式、预设、记录、全员检定及空骰盘加骰入口；设置使用玻璃浮层。保留公开、GM 可见、暗骰和私骰权限及声音。公式支持 `1d20+5`、`4d6dl1`、`2d20kh1`、`6d6>=5`、`1d6!` 和 `4dF`。
-- **骰盘互动**：底部列出每颗骰子的类型、点数、修正和总结果；取高低、成功数等特殊规则保留原公式。左侧显示 GM 与玩家的名字头像和近期投掷状态，未投掷时点自己的头像发送表情。表情在当前战役同步并短暂显示，私骰和暗骰的投掷状态也遵循原可见范围。
-- **手机骰盘**：竖屏放大骰盘并把成员头像放在顶部。点“多选”后逐颗点选／取消，支持全选和清除；底部可直接投掷选中骰子，点“完成”返回这组骰子的扇形菜单进行统一设置。未选中的骰子保留位置和点数，d100 两颗骰子按一组选择。
-
-## 技术栈
-
-- React 19 + TypeScript + Vite
-- TanStack Query
-- Supabase Auth + PostgreSQL + Storage
-- PostgreSQL RLS 与 `security definer` RPC
-- Vercel
-
-公告板采用固定世界坐标，窗口尺寸只影响视口适配，不改变便签、连线、贴纸和模块之间的空间关系。前端通过乐观更新保持拖动反馈，数据库使用原子操作避免并发保存覆盖其他物件的位置。
-
-配置按修改字段提交并核对编辑时的原值：不同 GM 修改不同标题或显隐状态可以合并，同一字段的旧草稿会提示冲突。外观草稿也会检查原值。进入房间后暂停大厅查询；访客留言打开后才读取，骰盘表情按服务端时间在本地过期，Realtime 断线时由轮询补查。
-
-## 快速开始
-
-要求：
-
-- Node.js 22
-- npm
-
-安装并启动：
+需要 Node.js 22.12 或以上。
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-打开 <http://127.0.0.1:5173>。
+默认地址：<http://127.0.0.1:5188/>。
 
-未配置 Supabase 时，开发环境自动使用浏览器内的演示仓储。也可以在 `.env.local` 中显式指定：
+本机开发由 Vite 转发投骰请求，携带当前用户的 JWT；生产环境使用 Supabase Edge Function。房间成员权限和投骰结果始终由服务端校验。
 
-```dotenv
-VITE_BACKEND=local
-```
+- 正常登录：`/`，读取 `.env.local` 的 Supabase 配置。
+- 本机演示：`/?demo=1`，演示数据仅保存到浏览器。
+- 强制 2D：`/?demo=1&fallback=1`。
 
-演示模式适合界面开发，不提供真实账号、跨设备同步或自定义图片持久化。
-
-## 连接 Supabase
-
-从模板创建本地环境文件：
+演示入口不创建云账号，也不代替登录与权限校验。
 
 ```bash
-cp .env.example .env.local
-```
-
-填写公开的前端配置：
-
-```dotenv
-VITE_BACKEND=supabase
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-VITE_GM_ACCOUNT_DOMAIN=gm.local
-```
-
-本地完整 Supabase 环境需要 Docker：
-
-```bash
-npm run supabase:up
-npm run supabase:status
-```
-
-将项目部署到托管 Supabase 前，应先登录 CLI、链接自己的项目，再执行：
-
-```bash
-npm run supabase:push
-npx supabase functions deploy roll-dice --use-api
-```
-
-不要将 service role key、数据库密码、JWT 私钥或个人访问令牌写入 `VITE_*` 变量。`VITE_*` 会被打包进公开网页。
-
-生产迁移、云端 smoke test 和回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。
-
-### VeilBoard 独立部署
-
-独立 Vercel 项目 `veilboard` 已连接 `DamianD1cky/OpenVeilBoard`，Production Branch 为 `feat/board-ai-harness`，该分支已推送到远端，后续提交触发生产构建，其他分支跳过自动构建。Framework Preset 为 Vite，Root Directory 为仓库根目录，构建命令 `npm run build`，输出目录 `dist`；环境变量在构建前设置。
-
-`veilboard.damiandicky.site` 已完成 DNS 验证和 HTTPS 证书签发，CNAME 指向 `4a61a43be87e33d6.vercel-dns-017.com`。仓库已由 `Hamburger_Protect` 改名为 `OpenVeilBoard`，本地 `origin` 已更新；未提交的本地修改不会进入 Git 自动部署。
-
-当前本地 `.vercel/project.json` 仍关联 `hamburger-protect`。独立站使用 `vercel deploy --project veilboard --prod` 明确指定新项目。VeilBoard 使用独立 Supabase `https://eacuvvrejnlaavaaulaf.supabase.co`，账号和房间与原站隔离；本地使用 `.env.veilboard.local` 配合 `npm run dev -- --mode veilboard`。
-
-默认骰子及 Harness 跨域列表已加入新域名。若服务端显式配置了 `DICE_ALLOWED_ORIGINS` 或 `HARNESS_ALLOWED_ORIGINS`，需要保留已有来源并追加新域名；这些变量会覆盖代码默认值。Auth Redirect URLs 也需要在托管 Supabase 中追加新域名，本地配置不会自动更新云端。
-
-## 常用命令
-
-| 命令 | 用途 |
-| --- | --- |
-| `npm run dev` | 启动开发服务器 |
-| `npm run build` | 类型检查并构建生产包 |
-| `npm run preview` | 预览生产构建 |
-| `npm run check` | TypeScript 检查 |
-| `npm run check:access-ui` | 账号入口浏览器回归 |
-| `npm run check:site-admin` | 站长审批、权限隔离和审计回归 |
-| `npm run check:site-admin-ui` | 站长审批桌面与手机交互回归 |
-| `npm run check:motion-ui` | 公告板桌面与移动端回归 |
-| `npm run check:accounts` | 账号领域测试 |
-| `npm run check:database` | PostgreSQL 权限与业务状态回归 |
-| `npm run check:board-objects` | 公告板物件与迁移回归 |
-| `npm run check:board-layout` | 贴纸旋转边界与独立事件钟卡片布局 |
-| `npm run check:dice` | 骰子公式、跨域、骰面与物理回放、扇形布局和多选替换 |
-| `npm run check:migration` | 历史迁移工具回归 |
-| `npm run check:secrets` | 扫描 Git 历史中的敏感信息 |
-
-浏览器回归默认连接 `http://127.0.0.1:5174`，可通过 `HP_PREVIEW_URL` 指定其他预览地址，通过 `CHROME_PATH` 指定 Chromium/Chrome。
-
-骰子和骰盘在本机按需生成，不下载外部模型；几何、PBR 材质和纹理按场景共享，关闭骰盘时释放。投掷采用结果先行：长按抓起时提前请求并锁定服务器结果，拖动期间在 Worker 中计算最新轨迹并完成手中定向；准备完成后松手直接播放下落，不再次原地定向。若结果未到或最后一刻改变手势，仍需完成剩余准备。按钮投掷同样先准备再播放。数字始终固定在骰体上，播放中不重贴字面、不修正点数。取消拖拽和失败重试保留同一次请求，关闭再打开骰盘也可继续已准备的投掷。材质槽、贴图图集和 shader 扩展方式见 [自制模型与材质说明](src/features/dice/MODELING.md)。
-
-## 项目结构
-
-```text
-assets/                         项目美术与内容资源
-src/
-├── app/                        应用入口与状态编排
-├── components/board/           公告板视图和编辑器
-├── components/composer/        任务与留言编辑器
-├── components/handbook/        员工手册界面
-├── features/access/            账号、建局和加入战役
-├── features/campaign/domain/   战役领域模型
-├── features/campaign/data/     本地与 Supabase 仓储
-├── features/campaign/hooks/    查询、缓存与乐观更新
-├── hooks/                      视图交互 Hook
-└── lib/supabase/               Supabase 客户端
-supabase/
-├── migrations/                 PostgreSQL 增量迁移
-├── tests/                      云端事务 smoke test
-└── functions/                  Edge Functions
-nhost/                          冻结的历史迁移审计基线
-```
-
-`nhost/` 不参与当前前端运行时；新的后端变更应通过 `supabase/migrations/` 提交。
-
-Nhost CLI 已退出默认依赖，`npm install` 不再安装它。需要复核历史 Nhost 基线时，在隔离环境中使用 CLI 1.52.0；历史迁移脚本与审计资料继续保留。
-
-## 安全
-
-- 前端只允许保存 Supabase URL 和 publishable key 等公开配置。
-- 本地凭据放在被 Git 忽略的环境文件或云平台 Secret 中。
-- 运行 `npm run setup:security` 可以安装本仓库的提交前敏感信息扫描。
-- GitHub Actions 会执行数据库检查和 Git 历史密钥扫描。
-- 发现安全问题时，请不要在公开 Issue 中粘贴凭据、用户数据或可利用细节。请通过仓库所有者公开的私密联系方式报告。
-
-如果凭据曾进入 Git 历史，应先在对应服务撤销或轮换；仅删除当前文件不能使旧凭据失效。
-
-## 参与贡献
-
-1. Fork 仓库并从 `main` 创建分支。
-2. 保持改动聚焦，数据库变更使用新的增量 migration。
-3. 为行为变化补充相应测试。
-4. 提交前至少运行：
-
-```bash
-npm run check
-npm run check:database
 npm run build
+npm test
+npm run check:browser
 ```
 
-涉及公告板拖动、移动端布局或视图交互时，再运行：
+浏览器检查使用本机 Chrome，支持 `CHROME_PATH`、`BASE_URL`、`OUTPUT_DIR`。截图和检查结果默认写入系统临时目录。
+
+## 结构
+
+| 层 | 入口 | 职责 |
+|---|---|---|
+| 实体台面 | `src/scene/CounterScene.js` | 石膏材质、树影、骨骼纸卡、绳索、归档槽、印漆时钟、Cannon 骰子 |
+| 领域内核 | `src/domain/boardStore.ts` | 对象级乐观写入、顺序保存、冲突检测、归档与投骰 |
+| 数据适配 | `src/data/` | Supabase RPC/Realtime；同接口的本机演示仓库 |
+| React 浮层 | `src/ui/` | 登录、房间、检视编辑器、能力插件、归档与 2D 降级 |
+
+视觉采用石膏台面、旧纸与红线；工作界面只保留四角入口。动效围绕登录落桌、打印落纸、悬停抬升与拖拽入盒。
+
+便签有四种纸张形态与七类能力。纸面最多显示三个角标，完整操作集中在检视编辑器。清单、事件钟、检定、批注、保密、物资和标签的面板各自独立。
+
+## 数据与权限
+
+实际后端使用 `notes`、`note_links`、`campaign_settings.clock_config`、`dice_rolls`。账号、注册、邀请码申请、GM 审批、站点审核和服务端投骰沿用已上线接口。
+
+新增迁移：`supabase/migrations/20261123000000_veilboard_surface.sql`。
 
 ```bash
-npm run check:motion-ui
+npm run supabase:push:dry
+npm run supabase:push
 ```
 
-提交贡献即表示你有权提交相关内容，并同意你的代码贡献按 MIT License 发布。请勿提交无授权的图片、字体、音频、品牌素材或用户数据。
+脚本从当前 Supabase URL 选择项目，仅执行这份增量迁移，使用事务与迁移锁。旧字段 `x/y` 仍是像素坐标，新增 `surface_x/surface_y` 是归一化坐标，两套接口双向换算。
 
-## 许可
+机密标题、正文、封面路径和能力数据存入私有表；公开表与 Realtime 只包含封条占位。图片访问同时校验便签受众，未关联的新上传只允许上传者读取。批注由独立 RPC 添加，仅作者可删除。编辑器以打开时的数据为基线检查冲突。
 
-这是一个**混合许可仓库**，不是所有文件都采用 MIT：
+多人共用服务端骰子结果。动画随机源由投骰 ID 派生；不同屏幕的运动轨迹允许有差异，最终骰面与结果一致。物理展示最多 40 颗，公式完整结果保留。
 
-### 源代码
+## 验证范围
 
-除下述美术资源和第三方内容外，源代码、SQL、配置及仓库原创技术文档采用 [MIT License](LICENSE)。
+已覆盖桌面与手机尺寸的登录接口契约、登录恢复、中文便签、清单、连线纸签、归档取回、投骰成签与刷新保留。WebGPU 检查覆盖七种骰体、点击拖拽、绳索休眠和归档恢复。
 
-MIT 允许商业使用、修改、分发和私有使用，但必须保留版权和许可声明。
+登录浏览器检查使用明确的 Auth/RPC 测试夹具；不代表真实云账号、邮件注册与双成员联机已实测。Safari、120 Hz 屏幕及大量便签的性能仍需实机验收。
 
-### 美术资源
+原作品集页面、作品视频、Lab 场景、旧办公室和旧板块 UI 已退出工程。引擎与素材来源见 `THIRD_PARTY_NOTICES.md`。
 
-以下仓库附带的原创美术资源采用 [Creative Commons Attribution-NonCommercial 4.0 International](assets/LICENSE.md)：
-
-```text
-assets/felt.webp
-assets/room-kitchen-clean.jpg
-assets/scene-blur.jpg
-assets/scene.webp
-assets/stickers/*.webp
-assets/dice/*.glb
-```
-
-这些资源可以在遵守署名要求的前提下用于非商业项目，但**不得用于商业用途**。如需商业授权，必须事先取得版权所有者的单独书面许可。
-
-MIT 代码可以用于商业项目，但商业发行前必须替换或移除上述受限美术资源，包括页面背景、板面纹理、贴纸和 favicon。仅保留 MIT 声明不能解除美术资源的非商业限制。
-
-`assets/汉堡王员工手册.docx` 不属于 MIT 软件许可或上述美术许可的授权范围，不应作为可复用素材重新分发。运行时由用户上传的内容也不因进入本项目而改变其原有权利归属。
-
-第三方组件、图标和字体遵循各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-## 免责声明
-
-本项目是独立创作的跑团工具，与任何现实餐饮品牌及其关联公司不存在隶属、赞助或背书关系。所有第三方商标、品牌名称和标识归其各自权利人所有。
+本次实施与验证明细见 [重构验收记录](docs/rebuild-validation-20261123.md)。

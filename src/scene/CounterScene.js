@@ -1,0 +1,340 @@
+import {
+  AmbientLight,
+  Color,
+  DirectionalLight,
+  Object3D,
+  PerspectiveCamera,
+  Vector3,
+} from "../engine/index.js";
+import { applyCamera, restPose } from "../features/opening/intro.js";
+import { SceneApp } from "./runtime/app.js";
+import { createStore } from "./runtime/store.js";
+import { FACTORY_DEFAULTS } from "./sceneControlDefaults.js";
+import { Gobo } from "./gobo.js";
+import { ScenePost, objectData } from "./post.js";
+import { createPMREM, loadGainMap } from "../engine/pmrem.js";
+import { ENVIRONMENT_GAINMAP } from "../shared/sceneAssets.js";
+import {
+  createRenderBudget,
+  sampleRenderBudget,
+  noteRenderBudgetInput,
+  FRAME_BUSY,
+  FRAME_CALM,
+} from "../shared/renderBudget.js";
+import { Counter } from "./Counter.js";
+import { NoteField } from "./NoteField.js";
+import { RopeLinkLayer } from "./RopeLinkLayer.js";
+import { SurfaceClock3D } from "./SurfaceClock3D.js";
+import { TableDiceLayer } from "./TableDiceLayer.js";
+import { Opening } from "./Opening.js";
+import { DustField } from "./DustField.js";
+export class CounterScene {
+  static async create(root, callbacks) {
+    const app = await SceneApp.create(root, { dpr: [1, 2] });
+    const scene = new CounterScene(app, callbacks);
+    try {
+      await scene.init();
+      return scene;
+    } catch (error) {
+      scene.dispose();
+      throw error;
+    }
+  }
+  constructor(app, callbacks) {
+    this.app = app;
+    this.callbacks = callbacks;
+    this.cleanups = [];
+    this.indentListeners = new Set();
+    this.layoutCam = new PerspectiveCamera(32, 1, 0.1, 80);
+    this.routeActive = false;
+    this.ctx = {
+      app,
+      controls: structuredClone(FACTORY_DEFAULTS),
+      counter: createStore({}),
+      inspect: createStore({ open: false }),
+      opening: createStore({
+        isLive: true,
+        hudVisible: true,
+        state: { phase: "live" },
+      }),
+      route: createStore({ pathname: "/", notFound: false }),
+    };
+    app.events.disconnect(); // The note field owns one explicit pointer classifier.
+    app.renderer.objectData = objectData;
+    app.scene.background = new Color("#24221e");
+  }
+  async init() {
+    const { app, ctx } = this,
+      c = ctx.controls;
+    app.scene.add(new AmbientLight(c.ambient.color, c.ambient.intensity));
+    const target = new Object3D();
+    app.scene.add(target);
+    const key = new DirectionalLight(c.key.color, c.key.intensity);
+    key.position.set(c.key.x, c.key.y, c.key.z);
+    key.target = target;
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, {
+      near: 0.5,
+      far: 40,
+      left: -c.key.shadowExtent,
+      right: c.key.shadowExtent,
+      top: c.key.shadowExtent,
+      bottom: -c.key.shadowExtent,
+    });
+    key.shadow.camera.updateProjectionMatrix();
+    key.shadow.bias = 0.00003;
+    key.shadow.normalBias = 0.0015;
+    app.scene.add(key);
+    app.scene.userData.keyLight = key;
+    app.scene.userData.keyShadowNode = key;
+    const fill = new DirectionalLight(c.fill.color, c.fill.intensity);
+    fill.position.set(c.fill.x, c.fill.y, c.fill.z);
+    app.scene.add(fill);
+    ctx.gobo = new Gobo(app.renderer);
+    ctx.gobo.configure(c, app.size);
+    this.cleanups.push(
+      app.stores.size.subscribe(() => ctx.gobo.configure(c, app.size)),
+    );
+    this.cleanups.push(
+      app.onFrame((_, dt) =>
+        ctx.gobo.frame(
+          dt,
+          matchMedia("(prefers-reduced-motion: reduce)").matches,
+        ),
+      ),
+    );
+    ctx.post = new ScenePost(app.renderer, {
+      gobo: ctx.gobo,
+      gtao: c.gtao,
+      bloom: {
+        strength: 1.6,
+        radius: 0.32,
+        threshold: 0.95,
+        smoothWidth: 0.01,
+      },
+      samples: 4,
+    });
+    this.counter = ctx.counterObject = new Counter(ctx);
+    app.scene.add(this.counter.object);
+    this.cleanups.push(
+      ctx.counter.subscribe(() => this.emitIndentRect()),
+      app.stores.size.subscribe(() => this.emitIndentRect()),
+    );
+    this.field = new NoteField(ctx, this.callbacks);
+    app.scene.add(this.field.object);
+    this.rope = ctx.rope = new RopeLinkLayer(ctx, this.field);
+    app.scene.add(this.rope.object);
+    this.clock = ctx.clock = new SurfaceClock3D(ctx);
+    app.scene.add(this.clock.object);
+    this.dice = ctx.dice = new TableDiceLayer(ctx, this.field, (roll) =>
+      this.callbacks.onDiceSettled?.(roll),
+    );
+    app.scene.add(this.dice.object);
+    this.opening = new Opening(ctx);
+    this.dust = new DustField(ctx);
+    if (this.dust.object) app.scene.add(this.dust.object);
+    this.blur = { value: 0.72 };
+    this.blurTarget = 0.72;
+    const budget = createRenderBudget({
+      dprMin: c.scene.dprMin,
+      dprMax: c.scene.dprMax,
+      deviceDpr: devicePixelRatio,
+    });
+    const input = () => noteRenderBudgetInput(budget);
+    const inputEvents = ["pointerdown", "pointermove", "wheel", "keydown"];
+    for (const event of inputEvents)
+      window.addEventListener(event, input, { passive: true });
+    this.cleanups.push(() => {
+      for (const event of inputEvents)
+        window.removeEventListener(event, input);
+    });
+    let last = null;
+    this.cleanups.push(
+      app.addEffect((timestamp) => {
+        const ms = last == null ? NaN : timestamp - last;
+        last = timestamp;
+        const next = sampleRenderBudget(
+          budget,
+          ms,
+          this.field.downState ? FRAME_BUSY : FRAME_CALM,
+        );
+        if (next != null) app.setDpr(next);
+      }),
+    );
+    const visibility = () =>
+      app.setFrameloop(document.hidden ? "never" : "always");
+    document.addEventListener("visibilitychange", visibility);
+    this.cleanups.push(() =>
+      document.removeEventListener("visibilitychange", visibility),
+    );
+    this.cleanups.push(
+      app.onFrame((_, dt) => {
+        this.blur.value +=
+          (this.blurTarget - this.blur.value) * (1 - Math.exp(-9 * dt));
+        ctx.post.setSize(
+          app.canvas.width,
+          app.canvas.height,
+          app.size.width,
+          app.size.height,
+        );
+        ctx.post.viewerProgress = this.blur.value;
+        ctx.post.render(app.scene, app.camera, null);
+      }, 1),
+    );
+    await Promise.all([
+      ctx.gobo.load(c.gobo.blur),
+      this.counter.ready,
+      loadGainMap(app.renderer, ENVIRONMENT_GAINMAP).then((map) => {
+        app.scene.environment = createPMREM(app.renderer, map.texture);
+        app.scene.environmentIntensity = c.environment.intensity;
+      }),
+    ]);
+    app.renderer.device.lost.then(() => {
+      if (!this.disposed) this.callbacks.onLost?.();
+    });
+    app.start();
+    this.ctx.app.container.dataset.scene = "ready";
+  }
+  sync(snapshot) {
+    this.field.sync(snapshot.notes);
+    this.rope.sync(snapshot.notes, snapshot.edges);
+    this.clock.setClock(snapshot.clock);
+    this.counter.archivedNotes = snapshot.notes.filter((n) => n.archivedAt);
+    this.counter.archivedCount = this.counter.archivedNotes.length;
+    this.counter.well?.setArchived(this.counter.archivedNotes);
+  }
+  getIndentRect() {
+    const { layout, zone, floorY } = this.ctx.counter.get();
+    const { width: viewW, height: viewH } = this.app.size;
+    if (!layout || !viewW || !viewH) return null;
+    const camCfg = this.ctx.controls.camera;
+    this.layoutCam.fov = camCfg.fov ?? 32;
+    this.layoutCam.near = camCfg.near ?? 0.1;
+    this.layoutCam.far = Math.max(camCfg.far ?? 40, 80);
+    this.layoutCam.aspect = viewW / Math.max(viewH, 1);
+    applyCamera(this.layoutCam, restPose(camCfg));
+    this.layoutCam.updateProjectionMatrix();
+    this.layoutCam.updateMatrixWorld(true);
+    const projectRect = (cx, cz, w, h) => {
+      let left = Infinity,
+        top = Infinity,
+        right = -Infinity,
+        bottom = -Infinity;
+      const corner = new Vector3();
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          corner.set(cx + (sx * w) / 2, floorY, cz + (sz * h) / 2);
+          corner.project(this.layoutCam);
+          const px = ((corner.x + 1) * viewW) / 2;
+          const py = ((1 - corner.y) * viewH) / 2;
+          left = Math.min(left, px);
+          right = Math.max(right, px);
+          top = Math.min(top, py);
+          bottom = Math.max(bottom, py);
+        }
+      }
+      return {
+        left,
+        top,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top),
+      };
+    };
+    const inset = 0.035;
+    const rect = projectRect(
+      0,
+      0,
+      Math.max(0.2, layout.indentWidth - inset * 2),
+      Math.max(0.2, layout.indentHeight - inset * 2),
+    );
+    const radiusPx = Math.max(
+      10,
+      Math.round((layout.indentRadius ?? 0.08) * (rect.width / layout.indentWidth)),
+    );
+    const well = zone
+      ? projectRect(zone.x, zone.z, zone.width, zone.height)
+      : null;
+    return {
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      radius: radiusPx,
+      well: well
+        ? {
+            left: Math.round(well.left),
+            top: Math.round(well.top),
+            width: Math.round(well.width),
+            height: Math.round(well.height),
+          }
+        : null,
+    };
+  }
+  emitIndentRect() {
+    if (!this.indentListeners.size) return;
+    const rect = this.getIndentRect();
+    for (const fn of this.indentListeners) fn(rect);
+  }
+  onIndentRect(fn) {
+    this.indentListeners.add(fn);
+    fn(this.getIndentRect());
+    return () => this.indentListeners.delete(fn);
+  }
+  setRouteView(activePage) {
+    this.routeActive = Boolean(activePage);
+    this.field.setSwept(this.routeActive);
+    this.rope.setVisible(!this.routeActive);
+    if (this.clock?.object) this.clock.object.visible = !this.routeActive;
+  }
+  setUI(active, inspect = false, blur = inspect) {
+    this.field.enabled = active && !inspect;
+    this.blurTarget = !active ? 0.72 : blur ? 0.45 : 0;
+  }
+  enter(skip = false) {
+    this.opening.play(skip);
+  }
+  diagnostics() {
+    const project = (point) => {
+      const p = point.clone().project(this.app.camera);
+      return {
+        x: ((p.x + 1) * this.app.size.width) / 2,
+        y: ((1 - p.y) * this.app.size.height) / 2,
+      };
+    };
+    const { zone, floorY } = this.ctx.counter.get();
+    return {
+      frame: this.app.frame,
+      dpr: this.app.viewport.dpr,
+      ropes: { count: this.rope.links.size, ...this.rope.stats },
+      dice: { ...this.dice.stats },
+      archive: project(new Vector3(zone.x, floorY, zone.z)),
+      cards: [...this.field.cards.values()].map((c) => {
+        const p = c.object
+          .getWorldPosition(new Vector3())
+          .project(this.app.camera);
+        return {
+          id: c.note.id,
+          title: c.note.title,
+          x: ((p.x + 1) * this.app.size.width) / 2,
+          y: ((1 - p.y) * this.app.size.height) / 2,
+        };
+      }),
+    };
+  }
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.cleanups.forEach((fn) => fn());
+    this.dice?.dispose();
+    this.rope?.dispose();
+    this.field?.dispose();
+    this.clock?.dispose();
+    this.opening?.dispose();
+    this.dust?.dispose();
+    this.counter?.dispose();
+    this.ctx.post?.dispose?.();
+    this.ctx.gobo?.dispose?.();
+    this.app.dispose();
+  }
+}

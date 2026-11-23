@@ -1,7 +1,27 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src/domain",
+    "src/data",
+    "src/ui",
+    "src/features/access/domain",
+    "src/features/access/data",
+    "src/features/access/hooks",
+    "src/features/campaign/domain",
+    "src/lib",
+    "src/main.tsx"
   ]
 }

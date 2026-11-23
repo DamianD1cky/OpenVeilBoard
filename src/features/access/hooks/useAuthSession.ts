@@ -19,7 +19,7 @@ export function useAuthSession() {
     error: "",
   });
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) { setState({ session: null, loading: false, error: "" }); return; }
     const client = supabase;
     let disposed = false;
     let version = 0;

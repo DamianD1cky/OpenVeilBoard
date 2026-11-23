@@ -1,6 +1,6 @@
 import {
   BufferGeometry, Float32BufferAttribute, ShapeUtils, Vector2, Vector3,
-} from "three";
+} from "../../engine/index.js";
 import { getDieShape, type DieFace } from "./diceShapes.ts";
 
 /** A small triangle builder keeps all repeated surfaces in one draw call. */

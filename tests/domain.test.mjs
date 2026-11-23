@@ -1,0 +1,215 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  legacyToNormalized,
+  normalizedToLegacy,
+  visibleEdges,
+  settlePosition,
+  overlap,
+  findFreePosition,
+} from "../src/domain/geometry.js";
+import { createBoardStore } from "../src/domain/boardStore.ts";
+import {
+  canReadNote,
+  capabilityRegistry,
+} from "../src/domain/capabilityRegistry.ts";
+import { defaultCampaignClock } from "../src/features/campaign/domain/campaignClock.ts";
+import { setImmediate as nextTurn } from "node:timers/promises";
+const note = {
+  id: "a",
+  title: "线索",
+  x: 0,
+  y: 0,
+  capabilities: [],
+  version: 0,
+};
+function harness() {
+  let data = {
+      notes: [note],
+      edges: [],
+      members: [],
+      clock: defaultCampaignClock(),
+    },
+    notify;
+  const writes = [];
+  const repo = {
+    load: async () => structuredClone(data),
+    subscribe: (fn) => {
+      notify = fn;
+      return () => {};
+    },
+    save: (_note, patch, expected) =>
+      new Promise((resolve, reject) =>
+        writes.push({
+          expected,
+          patch,
+          reject,
+          resolve: () => {
+            const saved = { ...data.notes[0], ...patch };
+            data.notes[0] = saved;
+            resolve(saved);
+          },
+        }),
+      ),
+  };
+  return {
+    store: createBoardStore(repo, "room", { id: "gm", name: "GM" }),
+    writes,
+    notify: () => notify(),
+    data,
+  };
+}
+test("旧像素坐标往返不会改变，超界数据有界", () => {
+  for (const [x, y] of [
+    [44, 44],
+    [1098, 605],
+    [2100, 1162],
+  ]) {
+    const p = legacyToNormalized(x, y);
+    assert.deepEqual(normalizedToLegacy(p.x, p.y), { x, y });
+  }
+  assert.deepEqual(legacyToNormalized(-1000, 9999), { x: -0.5, y: 0.5 });
+});
+test("归档仅隐藏连线，取回恢复同一条连线", () => {
+  const notes = [
+      { id: "a", archivedAt: null },
+      { id: "b", archivedAt: "now" },
+    ],
+    edges = [{ id: "e", fromNoteId: "a", toNoteId: "b" }];
+  assert.equal(visibleEdges(notes, edges).length, 0);
+  notes[1].archivedAt = null;
+  assert.equal(visibleEdges(notes, edges)[0].id, "e");
+});
+test("SAT 避让旋转纸卡", () => {
+  const a = { id: "a", x: 0, y: 0, width: 0.12, height: 0.15, rotation: 30 },
+    b = { id: "b", x: 0.02, y: 0, width: 0.12, height: 0.15, rotation: -20 };
+  assert.ok(overlap(a, b));
+  const next = { ...a, ...settlePosition(a, [b]) };
+  assert.equal(overlap(next, b), null);
+});
+test("落桌空位避开既有纸卡与台面保留区", () => {
+  const card = { id: "new", x: 0, y: 0, width: 0.2, height: 0.2, rotation: 0 };
+  const existing = [{ ...card, id: "old" }];
+  const reserved = [
+    { id: "clock", x: 0, y: -0.3, width: 0.3, height: 0.1, rotation: 0 },
+  ];
+  const point = findFreePosition(card, existing, { x: 0.4, y: 0.35 }, reserved);
+  assert.equal(overlap({ ...card, ...point }, existing[0]), null);
+  assert.equal(overlap({ ...card, ...point }, reserved[0]), null);
+});
+test("Realtime 重查不会抹掉待写回坐标", async () => {
+  const h = harness();
+  await h.store.refresh();
+  const writing = h.store.patch("a", { x: 0.25 });
+  await nextTurn();
+  await h.store.refresh();
+  assert.equal(h.store.getSnapshot().notes[0].x, 0.25);
+  h.writes[0].resolve();
+  await writing;
+  assert.equal(h.store.getSnapshot().notes[0].x, 0.25);
+  h.store.dispose();
+});
+test("实时重查保留待确认连线，并丢弃写入前发出的整板快照", async () => {
+  const snapshot = {
+    notes: [note],
+    edges: [],
+    members: [],
+    clock: defaultCampaignClock(),
+  };
+  let releaseRead,
+    confirmLink,
+    deferRead = false;
+  const repository = {
+    load() {
+      const selected = structuredClone(snapshot);
+      if (!deferRead) return Promise.resolve(selected);
+      deferRead = false;
+      return new Promise((resolve) => {
+        releaseRead = () => resolve(selected);
+      });
+    },
+    subscribe: () => () => {},
+    saveEdge(item) {
+      return new Promise((resolve) => {
+        confirmLink = () => {
+          const canonical = { ...item, id: "server-edge" };
+          snapshot.edges = [canonical];
+          resolve(canonical);
+        };
+      });
+    },
+  };
+  const store = createBoardStore(repository, "room", { id: "gm", name: "GM" });
+  await store.refresh();
+  const writing = store.edge("a", "b");
+  const optimisticId = store.getSnapshot().edges[0].id;
+  await store.refresh();
+  assert.equal(store.getSnapshot().edges[0].id, optimisticId);
+  deferRead = true;
+  const staleRead = store.refresh();
+  confirmLink();
+  await writing;
+  releaseRead();
+  await staleRead;
+  assert.deepEqual(
+    store.getSnapshot().edges.map((edge) => edge.id),
+    ["server-edge"],
+  );
+  store.dispose();
+});
+test("同一对象的两次写入有序且保留后一次乐观值", async () => {
+  const h = harness();
+  await h.store.refresh();
+  const first = h.store.patch("a", { x: 0.1 }),
+    second = h.store.patch("a", { x: 0.3 });
+  await nextTurn();
+  assert.equal(h.writes.length, 1);
+  h.writes[0].resolve();
+  await first;
+  assert.equal(h.store.getSnapshot().notes[0].x, 0.3);
+  await nextTurn();
+  assert.equal(h.writes[1].expected.x, 0.1);
+  h.writes[1].resolve();
+  await second;
+  assert.equal(h.store.getSnapshot().notes[0].x, 0.3);
+  h.store.dispose();
+});
+test("失败后显示服务器状态与明确错误", async () => {
+  const h = harness();
+  await h.store.refresh();
+  const write = h.store.patch("a", { title: "修改" });
+  await nextTurn();
+  h.writes[0].reject(new Error("NOTE_CONFLICT"));
+  await assert.rejects(write);
+  assert.equal(h.store.getSnapshot().notes[0].title, "线索");
+  h.store.dispose();
+});
+test("能力契约覆盖七类，权限占位与 GM 读取一致", () => {
+  assert.equal(capabilityRegistry.all().length, 7);
+  const n = {
+    capabilities: [
+      {
+        enabled: true,
+        type: "secret",
+        data: { scope: "selected", users: ["player"] },
+      },
+    ],
+  };
+  assert.ok(canReadNote(n, "gm", "gm"));
+  assert.ok(canReadNote(n, "player", "player"));
+  assert.equal(canReadNote(n, "other", "player"), false);
+});
+test("编辑期间已收到远端更新，保存仍使用编辑起点比较", async () => {
+  const h = harness();
+  await h.store.refresh();
+  const baseline = { ...h.store.getSnapshot().notes[0] };
+  h.data.notes[0] = { ...h.data.notes[0], title: "别人先保存的标题" };
+  await h.store.refresh();
+  const write = h.store.patch("a", { title: "我的修改" }, baseline);
+  await nextTurn();
+  assert.equal(h.writes[0].expected.title, "线索");
+  h.writes[0].reject(new Error("NOTE_CONFLICT"));
+  await assert.rejects(write);
+  assert.equal(h.store.getSnapshot().notes[0].title, "别人先保存的标题");
+  h.store.dispose();
+});

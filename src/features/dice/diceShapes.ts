@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, Matrix4, Quaternion, Vector3 } from "three";
+import { BufferGeometry, Float32BufferAttribute, Matrix4, Quaternion, Vector3 } from "../../engine/index.js";
 import modelGeometry from "./modelGeometry.json" with { type: "json" };
 
 export interface DieFace {
