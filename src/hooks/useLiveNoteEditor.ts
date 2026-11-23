@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BOARD_HEIGHT, BOARD_WIDTH } from "../features/campaign/domain/boardGeometry";
 import { defaultCardVisualEffect } from "../features/campaign/domain/cardEffects";
 import { createLiveNoteDraft, liveDraftToNoteInput, mergeLiveNoteDraft, noteEditableFields, type LiveNoteDraft } from "../features/campaign/domain/liveNoteDraft";
@@ -9,7 +9,7 @@ interface NoteEditorActions {
   uploadNotePhoto: (file: File) => Promise<string>;
   deleteNote: (id: string) => Promise<unknown>;
 }
-export function useLiveNoteEditor(board: CampaignBoard | undefined, actions: NoteEditorActions, focusNote: (note: BoardNote) => void) {
+export function useLiveNoteEditor(board: CampaignBoard | undefined, actions: NoteEditorActions, focusNote: (note: BoardNote | null) => void) {
   const [draft, setDraftState] = useState<LiveNoteDraft | null>(null);
   const draftRef = useRef(draft);
   const boardRef = useRef(board); boardRef.current = board;
@@ -20,6 +20,9 @@ export function useLiveNoteEditor(board: CampaignBoard | undefined, actions: Not
   const saving = useRef<Promise<boolean> | null>(null);
   const navigation = useRef(0);
   const setDraft = (value: LiveNoteDraft | null) => { draftRef.current = value; setDraftState(value); };
+  useLayoutEffect(() => {
+    if (!draft) focusNote(null);
+  }, [draft, focusNote]);
   useEffect(() => {
     const current = draftRef.current;
     if (!current || current.isNew || !board || saving.current) return;

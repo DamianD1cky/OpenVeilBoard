@@ -238,7 +238,8 @@ export function useBoardViewport(
     };
   }, [fit, world]);
 
-  const focusNote = useCallback((note: BoardNote) => {
+  const focusNote = useCallback((note: BoardNote | null) => {
+    if (focusedNoteRef.current === note) return;
     focusedNoteRef.current = note;
     fit(true);
   }, [fit]);
