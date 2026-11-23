@@ -476,9 +476,42 @@ class Dock3DStudio {
     ctx.drawImage(this.renderer.domElement, 0, 0, 144, 144);
     return true;
   }
+
+  dispose() {
+    const geometries=new Set<T.BufferGeometry>(),materials=new Set<T.Material>(),textures=new Set<T.Texture>();
+    for(const entry of this.scenes.values()){
+      entry.scene.traverse(object=>{
+        if(!(object instanceof T.Mesh))return;
+        geometries.add(object.geometry);
+        for(const material of Array.isArray(object.material)?object.material:[object.material]){
+          materials.add(material);
+          for(const value of Object.values(material))if(value instanceof T.Texture)textures.add(value);
+        }
+      });
+      entry.disposables.forEach(item=>item.dispose());
+    }
+    geometries.forEach(item=>item.dispose());materials.forEach(item=>item.dispose());textures.forEach(item=>item.dispose());
+    this.scenes.clear();this.environment.dispose();this.renderer.dispose();this.renderer.forceContextLoss();
+  }
 }
 
 let studioSingleton: Dock3DStudio | null | false = null;
+let studioUsers=0,releaseVersion=0;
+
+/** Release the offscreen context when the last classic dock icon unmounts. */
+export function retainDock3DStudio(){
+  studioUsers++;releaseVersion++;
+  let released=false;
+  return()=>{
+    if(released)return;released=true;studioUsers--;
+    const ticket=++releaseVersion;
+    queueMicrotask(()=>{
+      if(ticket===releaseVersion&&!studioUsers&&studioSingleton){
+        studioSingleton.dispose();studioSingleton=null;
+      }
+    });
+  };
+}
 
 function getDock3DStudio(): Dock3DStudio | null {
   if (studioSingleton === false) return null;

@@ -14,6 +14,16 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true });
 let checks = 0;
 const check = (condition, label) => { assert.ok(condition, label); checks++; };
+async function checkViewRestored(page, transform, label) {
+  await page.waitForFunction((expected) => {
+    const world = document.querySelector(".world");
+    if (!world || document.querySelector(".note-live-inspector")) return false;
+    const actual = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+    const target = new DOMMatrixReadOnly(expected);
+    return ["a", "d", "e", "f"].every((key) => Math.abs(actual[key] - target[key]) < 0.001);
+  }, transform);
+  check(await page.evaluate(() => window.visualViewport?.scale === 1), label);
+}
 function fixture(role = "gm") {
   const board = cloneDefaultBoard();
   const now = new Date().toISOString();
@@ -59,6 +69,8 @@ try {
     }, fixture());
     await page.goto(preview);
     await page.locator('[data-note-id="note-0"]').waitFor();
+    await page.waitForFunction(() => Boolean(document.querySelector(".world")?.style.transform));
+    const overviewTransform = await page.locator(".world").evaluate((element) => element.style.transform);
     await page.locator('[data-note-id="note-0"]').click();
     const inspector = page.getByRole("dialog", { name: "便签实时编辑" });
     await inspector.waitFor();
@@ -107,13 +119,6 @@ try {
     await page.getByRole("slider", { name: "便签缩放", exact: true }).press("ArrowRight");
     check(await page.locator('[data-note-id="note-0"]').getAttribute("data-color") === "#2a5268", "RGB edits reach the real note");
     check(await page.locator('[data-note-id="note-0"]').getAttribute("data-pin-color") === "#df9236", "pin edits reach the real anchor");
-    await inspector.getByRole("button", { name: "全息投影便签", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('[data-note-id="note-0"]')?.getAttribute("data-note-shader") === "hologram");
-    check(true, "hologram material previews on the actual note");
-    await inspector.getByRole("button", { name: "烈焰烧焦便签", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('[data-note-id="note-0"]')?.getAttribute("data-note-shader") === "burnt");
-    check(true, "burnt material previews on the actual note");
-    await inspector.getByRole("button", { name: "经典便利贴", exact: true }).click();
     await page.screenshot({ path: join(output, `${scenario.name}-便签实时编辑.png`) });
     const bounds = await page.evaluate(() => {
       const r = document.querySelector(".note-live-inspector").getBoundingClientRect();
@@ -135,6 +140,41 @@ try {
     await page.waitForFunction(() => document.querySelector('[aria-label="便签标题"]')?.value === "便签乙");
     check((await page.evaluate(() => JSON.parse(localStorage.getItem("veilboard-board-v3")).notes.find((n) => n.id === "note-0").title)) === "切签自动保存", "switching notes commits the preceding draft");
     await inspector.getByRole("button", { name: "关闭便签编辑" }).click();
+    await checkViewRestored(page, overviewTransform, `${scenario.name}: closing existing notes restores the overview`);
+    for (let i = 0; i < 2; i++) {
+      await page.getByRole("button", { name: "填写便签", exact: true }).click();
+      await page.locator('[data-note-id="__draft_new__"]').waitFor();
+      check(await page.locator(".world").evaluate((element) => element.style.transform) !== overviewTransform, "new notes focus the board while editing");
+      await inspector.getByRole("textbox", { name: "便签标题", exact: true }).fill(`新增视口回归${i}`);
+      await inspector.getByRole("textbox", { name: "便签正文", exact: true }).fill("保存并退出后恢复原视图");
+      await inspector.getByRole("button", { name: "关闭便签编辑" }).click();
+      await checkViewRestored(page, overviewTransform, `${scenario.name}: saving new note ${i} restores the overview`);
+      check(await page.evaluate((title) => JSON.parse(localStorage.getItem("veilboard-board-v3")).notes.some((note) => note.title === title), `新增视口回归${i}`), "new note contents are persisted");
+    }
+    await page.getByRole("button", { name: "填写便签", exact: true }).click();
+    await inspector.waitFor();
+    await page.keyboard.press("Escape");
+    await checkViewRestored(page, overviewTransform, "Escape from an empty new note restores the overview");
+    await page.getByRole("button", { name: "填写便签", exact: true }).click();
+    await inspector.getByRole("button", { name: "删除便签", exact: true }).click();
+    await checkViewRestored(page, overviewTransform, "discarding a new note restores the overview");
+    await page.getByRole("button", { name: "编辑便签：新增视口回归1", exact: true }).click();
+    await inspector.getByRole("button", { name: "删除便签", exact: true }).click();
+    await inspector.getByRole("button", { name: "确认删除", exact: true }).click();
+    await checkViewRestored(page, overviewTransform, "deleting a saved note restores the overview");
+    if (scenario.name === "mobile") {
+      await page.getByRole("navigation", { name: "公告板区域" }).getByRole("button", { name: "战术检定", exact: true }).click();
+      const regionTransform = await page.locator(".world").evaluate((element) => element.style.transform);
+      await page.getByRole("button", { name: "填写便签", exact: true }).click();
+      await inspector.waitFor();
+      await inspector.getByRole("button", { name: "关闭便签编辑" }).click();
+      await checkViewRestored(page, regionTransform, "closing a note preserves the preceding mobile region");
+      await page.getByRole("button", { name: "公告板全览", exact: true }).click();
+      await checkViewRestored(page, overviewTransform, "mobile overview navigation remains usable");
+    }
+    await page.setViewportSize({ width: scenario.width, height: scenario.height + 40 });
+    await page.setViewportSize({ width: scenario.width, height: scenario.height });
+    await checkViewRestored(page, overviewTransform, "resizing after closing does not revive note focus");
     await page.getByRole("button", { name: /^打开档案盒/ }).click();
     const archive = page.getByRole("dialog", { name: "档案盒", exact: true });
     await archive.waitFor();

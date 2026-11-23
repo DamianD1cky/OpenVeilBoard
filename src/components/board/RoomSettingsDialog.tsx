@@ -865,6 +865,7 @@ export function RoomSettingsDialog({
                         noteFontSizes: current.noteFontSizes,
                         sectionFontSizes: current.sectionFontSizes,
                         archiveEntries: current.archiveEntries,
+                        hiddenPanelIds: current.hiddenPanelIds,
                       }))
                     }
                   >

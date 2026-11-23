@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { renderDock3DIcon, type Dock3DKind } from "../../features/dock/dock3dModels";
+import { renderDock3DIcon, retainDock3DStudio, type Dock3DKind } from "../../features/dock/dock3dModels";
 
 /**
  * 程序坞 3D 实体图标渲染器：
@@ -23,16 +23,17 @@ export function Dock3DIcon({
   const lastMsRef = useRef(0);
 
   useEffect(() => {
+    const releaseStudio=retainDock3DStudio();
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return releaseStudio;
     const ok = renderDock3DIcon(canvas, kind, 0, 0);
     if (!ok) {
       setFailed(true);
-      return;
+      return releaseStudio;
     }
 
     const hostBtn = canvas.closest("button");
-    if (!hostBtn) return;
+    if (!hostBtn) return releaseStudio;
 
     const reduced =
       typeof window !== "undefined" &&
@@ -95,6 +96,7 @@ export function Dock3DIcon({
     hostBtn.addEventListener("blur", onLeave);
 
     return () => {
+      releaseStudio();
       hostBtn.removeEventListener("pointerenter", onEnter);
       hostBtn.removeEventListener("pointerleave", onLeave);
       hostBtn.removeEventListener("focus", onEnter);
