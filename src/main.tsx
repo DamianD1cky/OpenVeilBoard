@@ -127,11 +127,12 @@ function Application({
     }
   }, [session?.user.id]);
   useEffect(() => {
-    if (!room) scene?.setUI(false, true, account);
+    if (!room) {
+      document.documentElement.dataset.trayTone = "light";
+      scene?.setAvoidanceZone?.(null);
+      scene?.setUI(false, true, false);
+    }
   }, [room, scene, account]);
-  useEffect(() => {
-    if (room) scene?.setUI(true, account, account);
-  }, [account]);
   const enter = (next: ActiveCampaignAccess) => {
     if (session)
       localStorage.setItem(
@@ -156,7 +157,8 @@ function Application({
           session={session}
           scene={scene}
           demo={demo}
-          onAccount={() => setAccount(true)}
+          accountOpen={account}
+          onAccount={() => setAccount((prev) => !prev)}
           onRooms={() => {
             if (demo) return;
             setAuto(false);
@@ -178,6 +180,7 @@ function Application({
           room={room}
           onClose={() => setAccount(false)}
           onRefresh={refresh}
+          indentRect={indentRect}
         />
       )}
     </>

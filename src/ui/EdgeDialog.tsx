@@ -1,33 +1,43 @@
 import { useState } from "react";
-import { PaperDialog } from "./PaperDialog";
+import type { IndentRect } from "./PaperDialog";
+import { TrayOverlay } from "./TrayOverlay";
 import type { NoteEdge } from "../domain/types";
 import { errorText, type BoardStore } from "../domain/boardStore";
+
 export function EdgeDialog({
   edge,
   store,
   role,
   onClose,
+  indentRect = null,
 }: {
   edge: NoteEdge;
   store: BoardStore;
   role: string;
   onClose: () => void;
+  indentRect?: IndentRect | null;
 }) {
   const [draft, setDraft] = useState(edge),
     [error, setError] = useState("");
   return (
-    <PaperDialog title="线索连线" onClose={onClose}>
-      <label>
-        纸签
+    <TrayOverlay
+      menu="edge"
+      title="线索连线"
+      onClose={onClose}
+      indentRect={indentRect}
+    >
+      <label className="tray-form-field">
+        <span>纸签</span>
         <input
           value={draft.label}
           maxLength={120}
+          placeholder="输入线索关系说明…"
           readOnly={role === "observer"}
           onChange={(e) => setDraft({ ...draft, label: e.target.value })}
         />
       </label>
-      <label>
-        线材
+      <label className="tray-form-field">
+        <span>线材</span>
         <select
           value={draft.style}
           disabled={role === "observer"}
@@ -52,13 +62,15 @@ export function EdgeDialog({
         </select>
       </label>
       {error && (
-        <p role="alert" className="error">
+        <p role="alert" className="tray-inline-error">
           {error}
         </p>
       )}
       {role !== "observer" && (
-        <div className="dialog-footer">
+        <div className="tray-overlay-footer">
           <button
+            type="button"
+            className="tray-ghost-btn danger"
             onClick={async () => {
               try {
                 await store.removeEdge(edge.id);
@@ -71,7 +83,8 @@ export function EdgeDialog({
             删除连线
           </button>
           <button
-            className="ink-button"
+            type="button"
+            className="tray-primary-btn"
             onClick={async () => {
               try {
                 await store.updateEdge(draft);
@@ -85,6 +98,6 @@ export function EdgeDialog({
           </button>
         </div>
       )}
-    </PaperDialog>
+    </TrayOverlay>
   );
 }

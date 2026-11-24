@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { PaperDialog } from "./PaperDialog";
+import type { IndentRect } from "./PaperDialog";
+import { TrayOverlay } from "./TrayOverlay";
 import {
   configureCampaignClockValue,
   materializeCampaignClock,
@@ -8,14 +9,17 @@ import {
 } from "../features/campaign/domain/campaignClock";
 import { useClockText } from "./useClockText";
 import { errorText, type BoardStore } from "../domain/boardStore";
+
 export function ClockDialog({
   store,
   role,
   onClose,
+  indentRect = null,
 }: {
   store: BoardStore;
   role: string;
   onClose: () => void;
+  indentRect?: IndentRect | null;
 }) {
   const [clock, setClock] = useState(
       materializeCampaignClock(store.getSnapshot().clock),
@@ -23,10 +27,17 @@ export function ClockDialog({
     [error, setError] = useState("");
   const text = useClockText(clock);
   return (
-    <PaperDialog title="战役时钟" onClose={onClose}>
-      <p className="clock-large">{text}</p>
-      <div className="inline-actions">
+    <TrayOverlay
+      menu="clock"
+      title="战役时钟"
+      onClose={onClose}
+      indentRect={indentRect}
+    >
+      <p className="tray-clock-display">{text}</p>
+      <div className="tray-pill-row">
         <button
+          type="button"
+          className="tray-chip"
           disabled={role !== "gm"}
           onClick={() =>
             setClock({
@@ -43,6 +54,8 @@ export function ClockDialog({
           ["1d", 86400000],
         ].map(([name, ms]) => (
           <button
+            type="button"
+            className="tray-chip"
             key={name}
             disabled={role !== "gm"}
             onClick={() =>
@@ -66,8 +79,8 @@ export function ClockDialog({
           </button>
         ))}
       </div>
-      <label>
-        模式
+      <label className="tray-form-field">
+        <span>模式</span>
         <select
           aria-label="模式"
           disabled={role !== "gm"}
@@ -88,9 +101,9 @@ export function ClockDialog({
         </select>
       </label>
       {clock.mode === "clock" ? (
-        <div className="form-pair">
-          <label>
-            纪元
+        <div className="tray-form-pair">
+          <label className="tray-form-field">
+            <span>纪元</span>
             <input
               value={clock.era}
               maxLength={2}
@@ -100,8 +113,8 @@ export function ClockDialog({
               }
             />
           </label>
-          <label>
-            日期时间
+          <label className="tray-form-field">
+            <span>日期时间</span>
             <input
               type="datetime-local"
               readOnly={role !== "gm"}
@@ -115,8 +128,8 @@ export function ClockDialog({
           </label>
         </div>
       ) : (
-        <label>
-          时长（分钟）
+        <label className="tray-form-field">
+          <span>时长（分钟）</span>
           <input
             type="number"
             min={0}
@@ -134,14 +147,15 @@ export function ClockDialog({
         </label>
       )}
       {error && (
-        <p role="alert" className="error">
+        <p role="alert" className="tray-inline-error">
           {error}
         </p>
       )}
       {role === "gm" && (
-        <div className="dialog-footer">
+        <div className="tray-overlay-footer">
           <button
-            className="ink-button"
+            type="button"
+            className="tray-primary-btn"
             onClick={async () => {
               try {
                 await store.clock(clock);
@@ -155,9 +169,10 @@ export function ClockDialog({
           </button>
         </div>
       )}
-    </PaperDialog>
+    </TrayOverlay>
   );
 }
+
 function localDate(ms: number) {
   const date = new Date(ms);
   return new Date(ms - date.getTimezoneOffset() * 60_000)

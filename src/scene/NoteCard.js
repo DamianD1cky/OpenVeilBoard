@@ -76,6 +76,7 @@ export class NoteCard {
     });
     this.object.add(this.pin);
     this.aim = { x: 0, z: 0, lift: 0, tilt: 0, scale: 1, yaw: 0 };
+    this.avoid = { x: 0, z: 0, yaw: 0 };
     this.pulseUntil = 0;
     this.archiving = false;
     this.swept = false;
@@ -255,19 +256,40 @@ export class NoteCard {
     this.pulseUntil = performance.now() + 450;
     this.wakeWiggle();
   }
+  setAvoidance(dx = 0, dz = 0, yawRad = 0) {
+    if (
+      Math.abs(this.avoid.x - dx) < 1e-4 &&
+      Math.abs(this.avoid.z - dz) < 1e-4 &&
+      Math.abs(this.avoid.yaw - yawRad) < 1e-4
+    ) {
+      return false;
+    }
+    this.avoid.x = dx;
+    this.avoid.z = dz;
+    this.avoid.yaw = yawRad;
+    this.wakeWiggle();
+    this.wakeLinks();
+    return true;
+  }
   frame(dt) {
     if (this.disposed) return;
     const stepDt = Math.min(dt || 0.016, 0.05);
     if (this.burnActive === 2 || this.burningAway) {
       this.burnHooks.uniforms.uBurnTime.value += stepDt;
     }
-    const k = 1 - Math.exp(-18 * stepDt),
+    const k = 1 - Math.exp(-15 * stepDt),
       now = performance.now();
     if (!this.printing && !this.swept) {
-      this.object.position.x += (this.aim.x - this.object.position.x) * k;
-      this.object.position.z += (this.aim.z - this.object.position.z) * k;
+      const targetX = this.aim.x + (this.dragging ? 0 : this.avoid.x);
+      const targetZ = this.aim.z + (this.dragging ? 0 : this.avoid.z);
+      const targetYaw = this.aim.yaw + (this.dragging ? 0 : this.avoid.yaw);
+      const movedX = Math.abs(targetX - this.object.position.x);
+      const movedZ = Math.abs(targetZ - this.object.position.z);
+      this.object.position.x += (targetX - this.object.position.x) * k;
+      this.object.position.z += (targetZ - this.object.position.z) * k;
       this.object.rotation.x += (this.aim.tilt - this.object.rotation.x) * k;
-      this.object.rotation.y += (this.aim.yaw - this.object.rotation.y) * k;
+      this.object.rotation.y += (targetYaw - this.object.rotation.y) * k;
+      if (movedX + movedZ > 0.002) this.wakeLinks();
       const nextScale =
         this.object.scale.x + (this.aim.scale - this.object.scale.x) * k;
       this.object.scale.setScalar(nextScale);

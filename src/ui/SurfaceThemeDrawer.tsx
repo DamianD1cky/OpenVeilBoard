@@ -1,10 +1,10 @@
-import type { CSSProperties } from "react";
 import {
   SURFACE_MATERIALS,
   SURFACE_THEME_PRESETS,
 } from "../scene/surfacePresets.js";
 import type { SurfaceTheme } from "../domain/types";
 import type { IndentRect } from "./PaperDialog";
+import { TrayOverlay } from "./TrayOverlay";
 
 const MATERIAL_OPTIONS = Object.values(SURFACE_MATERIALS);
 
@@ -19,27 +19,14 @@ export function SurfaceThemeDrawer({
   onClose: () => void;
   indentRect?: IndentRect | null;
 }) {
-  const drawerStyle: CSSProperties | undefined = indentRect
-    ? {
-        top: `${indentRect.top + 52}px`,
-        right: `${Math.max(16, window.innerWidth - (indentRect.left + indentRect.width) + 20)}px`,
-      }
-    : undefined;
   return (
-    <aside
-      className="surface-theme-drawer"
-      style={drawerStyle}
-      role="dialog"
-      aria-label="台面外框与内槽纹理"
+    <TrayOverlay
+      menu="surface"
+      title="台面纹理"
+      onClose={onClose}
+      indentRect={indentRect}
     >
-      <div className="surface-drawer-head">
-        <h3>台面纹理与材质</h3>
-        <button type="button" aria-label="关闭" onClick={onClose}>
-          ×
-        </button>
-      </div>
-
-      <div className="surface-preset-grid">
+      <div className="surface-floating-list">
         {SURFACE_THEME_PRESETS.map((preset) => {
           const active =
             theme.framePreset === preset.frameId &&
@@ -48,7 +35,8 @@ export function SurfaceThemeDrawer({
             <button
               key={preset.id}
               type="button"
-              className={`surface-preset-card ${active ? "active" : ""}`}
+              className={`surface-floating-row ${active ? "active" : ""}`}
+              aria-pressed={active}
               onClick={() =>
                 onChange({
                   presetId: preset.id,
@@ -61,7 +49,7 @@ export function SurfaceThemeDrawer({
                 <i style={{ background: preset.swatches[0] }} />
                 <i style={{ background: preset.swatches[1] }} />
               </span>
-              <span className="surface-preset-meta">
+              <span className="surface-floating-meta">
                 <strong>{preset.label}</strong>
                 <small>{preset.subtitle}</small>
               </span>
@@ -70,7 +58,7 @@ export function SurfaceThemeDrawer({
         })}
       </div>
 
-      <div className="surface-slot-mix">
+      <div className="surface-floating-mix">
         <label>
           <span>外框材质</span>
           <select
@@ -110,6 +98,6 @@ export function SurfaceThemeDrawer({
           </select>
         </label>
       </div>
-    </aside>
+    </TrayOverlay>
   );
 }

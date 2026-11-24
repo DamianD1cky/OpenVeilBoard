@@ -6,6 +6,7 @@ import {
   updateDropMagnet,
 } from "../features/polaroids/dropMagnet.js";
 import { settlePosition, findFreePosition } from "../domain/geometry.js";
+import { computeAvoidanceOffsets } from "../domain/avoidance.ts";
 import { cardAspect } from "../features/polaroids/noteTexture.js";
 import { playSound, panForClientX } from "../features/audio/audioEngine.js";
 export class NoteField {
@@ -19,12 +20,15 @@ export class NoteField {
     this.hitPoint = new Vector3();
     this.pointer = new Vector2();
     this.enabled = false;
+    this.avoidZone = null;
+    this.diceHovered = false;
     this.canvas = ctx.app.canvas;
     this.handlers = {
       pointerdown: (e) => this.down(e),
       pointermove: (e) => this.move(e),
       pointerup: (e) => this.up(e),
       pointercancel: () => this.cancel(),
+      contextmenu: (e) => this.contextMenu(e),
       pointerleave: () => {
         if (!this.downState) this.hover(null);
       },
@@ -35,6 +39,7 @@ export class NoteField {
     this.off = ctx.counter.subscribe(() => {
       for (const card of this.cards.values())
         card.update(card.note, this.cardWidth());
+      if (this.avoidZone) this.applyAvoidance(false);
     });
   }
   cardWidth() {
@@ -111,6 +116,67 @@ export class NoteField {
         }
       } else card.update(note);
     }
+    if (this.avoidZone) this.applyAvoidance(false);
+  }
+  setAvoidanceZone(zone) {
+    this.avoidZone = zone ?? null;
+    this.applyAvoidance(true);
+  }
+  applyAvoidance(withSound = false) {
+    const { layout, zone: well } = this.ctx.counter.get();
+    if (!layout) return;
+    if (!this.avoidZone) {
+      let moved = false;
+      for (const card of this.cards.values()) {
+        if (card.setAvoidance(0, 0, 0)) moved = true;
+      }
+      if (moved && withSound) {
+        playSound("polaroid.shuffle", { volume: 0.16, pan: 0 });
+      }
+      return;
+    }
+    const iw = Math.max(layout.indentWidth, 0.1);
+    const ih = Math.max(layout.indentHeight, 0.1);
+    const inputs = [...this.cards.values()].map((c) => {
+      const ang = (c.note.rotation * Math.PI) / 180;
+      const hw =
+        (Math.abs(Math.cos(ang)) * c.width + Math.abs(Math.sin(ang)) * c.height) *
+        0.5;
+      const hh =
+        (Math.abs(Math.sin(ang)) * c.width + Math.abs(Math.cos(ang)) * c.height) *
+        0.5;
+      return {
+        id: c.note.id,
+        x: c.aim.x / iw,
+        y: c.aim.z / ih,
+        halfW: hw / iw,
+        halfH: hh / ih,
+      };
+    });
+    const wellRect = well
+      ? {
+          left: (well.x - well.width * 0.5) / iw,
+          right: (well.x + well.width * 0.5) / iw,
+          top: (well.z - well.height * 0.5) / ih,
+          bottom: (well.z + well.height * 0.5) / ih,
+        }
+      : null;
+    const offsets = computeAvoidanceOffsets(inputs, this.avoidZone, wellRect);
+    let anyMoved = false;
+    for (const card of this.cards.values()) {
+      const off = offsets.get(card.note.id);
+      const changed = off
+        ? card.setAvoidance(
+            off.dx * iw,
+            off.dy * ih,
+            (-off.yawDeg * Math.PI) / 180,
+          )
+        : card.setAvoidance(0, 0, 0);
+      if (changed) anyMoved = true;
+    }
+    if (anyMoved && withSound) {
+      playSound("polaroid.shuffle", { volume: 0.18, pan: -0.2 });
+    }
   }
   burnAndRemove(id, done) {
     const card = this.cards.get(id);
@@ -177,13 +243,24 @@ export class NoteField {
         ? { kind: "well", point }
         : point && this.ctx.clock?.contains(point)
           ? { kind: "clock" }
-          : point
-            ? (() => {
-                const edge = this.ctx.rope?.at(point);
-                return edge ? { kind: "edge", edge } : null;
-              })()
-            : null;
+          : point && this.ctx.dice?.containsDocked?.(point)
+            ? { kind: "dice" }
+            : point
+              ? (() => {
+                  const edge = this.ctx.rope?.at(point);
+                  return edge ? { kind: "edge", edge } : null;
+                })()
+              : null;
     this.ctx.clock?.setHover?.(hoverTarget?.kind === "clock");
+    const nextDiceHover =
+      hoverTarget?.kind === "dice" && (this.callbacks.canRoll?.() ?? true);
+    if (nextDiceHover !== this.diceHovered) {
+      this.diceHovered = nextDiceHover;
+      this.ctx.dice?.setDockedHover?.(nextDiceHover);
+      this.callbacks.onDiceHover?.(
+        nextDiceHover ? this.ctx.dice?.getLastRollInfo?.() : null,
+      );
+    }
     if (!this.downState) {
       this.ctx.counterObject.well?.highlight(
         hoverTarget?.kind === "well",
@@ -229,6 +306,12 @@ export class NoteField {
     this.hovered = null;
     this.ctx.clock?.setHover?.(false);
     this.ctx.counterObject.well?.highlight(false);
+    if (this.diceHovered) {
+      this.diceHovered = false;
+      this.ctx.dice?.setDockedHover?.(false);
+      this.callbacks.onDiceHover?.(null);
+    }
+    const wasDocked = this.ctx.dice?.state === "docked";
     this.ctx.dice?.tidyToCorner();
     this.downState = {
       card,
@@ -239,6 +322,7 @@ export class NoteField {
       offsetZ: card ? card.object.position.z - point.z : 0,
       linking: e.shiftKey && canLink,
       moved: false,
+      wasDocked,
     };
     if (card && e.shiftKey && canLink) {
       this.callbacks.onLinkStart?.(card.note.id);
@@ -346,6 +430,13 @@ export class NoteField {
         this.callbacks.onOpenArchive?.();
       else if (point && this.ctx.clock.contains(point))
         this.callbacks.onClock?.();
+      else if (
+        down.wasDocked &&
+        point &&
+        this.ctx.dice?.containsDocked?.(point) &&
+        (this.callbacks.canRoll?.() ?? true)
+      )
+        this.callbacks.onDiceReroll?.();
       else {
         const edge = point ? this.ctx.rope?.at(point) : null;
         if (edge) this.callbacks.onEdge?.(edge);
@@ -353,6 +444,19 @@ export class NoteField {
       }
     }
     this.releaseCapture();
+  }
+  contextMenu(e) {
+    if (!this.enabled) return;
+    const point = this.point(e);
+    if (
+      point &&
+      !this.at(point) &&
+      this.ctx.dice?.containsDocked?.(point) &&
+      (this.callbacks.canRoll?.() ?? true)
+    ) {
+      e.preventDefault();
+      this.callbacks.onDiceMenu?.();
+    }
   }
   releaseCapture() {
     if (this.canvas.hasPointerCapture(this.pointerId))

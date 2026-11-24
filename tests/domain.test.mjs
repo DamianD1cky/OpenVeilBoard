@@ -14,6 +14,7 @@ import {
   capabilityRegistry,
 } from "../src/domain/capabilityRegistry.ts";
 import { defaultCampaignClock } from "../src/features/campaign/domain/campaignClock.ts";
+import { computeAvoidanceOffsets } from "../src/domain/avoidance.ts";
 import { setImmediate as nextTurn } from "node:timers/promises";
 const note = {
   id: "a",
@@ -212,4 +213,31 @@ test("编辑期间已收到远端更新，保存仍使用编辑起点比较", as
   await assert.rejects(write);
   assert.equal(h.store.getSnapshot().notes[0].title, "别人先保存的标题");
   h.store.dispose();
+});
+test("浮空菜单避让仅推开遮挡便签，关闭后归零", () => {
+  const cards = [
+    { id: "block", x: 0.28, y: -0.05, halfW: 0.1, halfH: 0.12 },
+    { id: "far", x: -0.34, y: 0.25, halfW: 0.1, halfH: 0.12 },
+  ];
+  const zone = {
+    left: 0.08,
+    right: 0.48,
+    top: -0.38,
+    bottom: 0.26,
+    preferDir: "left",
+  };
+  const offsets = computeAvoidanceOffsets(cards, zone);
+  const blockOff = offsets.get("block");
+  assert.ok(blockOff, "遮挡卡片应产生避让位移");
+  const movedRight = cards[0].x + blockOff.dx + cards[0].halfW;
+  const movedBottom = cards[0].y + blockOff.dy + cards[0].halfH;
+  const movedTop = cards[0].y + blockOff.dy - cards[0].halfH;
+  assert.ok(
+    movedRight <= zone.left + 0.01 ||
+      movedBottom <= zone.top + 0.01 ||
+      movedTop >= zone.bottom - 0.01,
+    "避让后的卡片应移出浮空菜单区域",
+  );
+  assert.equal(offsets.has("far"), false, "不遮挡的卡片不应移动");
+  assert.equal(computeAvoidanceOffsets(cards, null).size, 0);
 });

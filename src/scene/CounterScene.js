@@ -303,6 +303,9 @@ export class CounterScene {
   setSurfaceTheme(theme) {
     return this.counter?.setSurfaceTheme(theme);
   }
+  setAvoidanceZone(zone) {
+    this.field?.setAvoidanceZone(zone);
+  }
   burnNote(id, done) {
     this.field.burnAndRemove(id, done);
   }

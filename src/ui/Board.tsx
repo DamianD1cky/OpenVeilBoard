@@ -20,6 +20,7 @@ import { ClockDialog } from "./ClockDialog";
 import { EdgeDialog } from "./EdgeDialog";
 import { PaperDialog, type IndentRect } from "./PaperDialog";
 import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
+import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
 import {
   loadSavedSurfaceTheme,
   resolveSurfaceTheme,
@@ -33,11 +34,31 @@ import {
 } from "../shared/navigation";
 import type { NoteEdge, SurfaceTheme } from "../domain/types";
 import type { DiceRoll } from "../features/dice/types";
+
+const DICE_PRESETS = [
+  "1d4",
+  "1d6",
+  "1d8",
+  "1d10",
+  "1d12",
+  "1d20",
+  "1d100",
+  "2d6",
+];
+
+const DICE_MATERIALS = [
+  { id: "ivory", label: "象牙白" },
+  { id: "obsidian", label: "黑曜石金" },
+  { id: "brass", label: "复古黄铜" },
+  { id: "jade", label: "深绿翡翠" },
+];
+
 export function Board({
   room,
   session,
   scene,
   demo,
+  accountOpen = false,
   onRooms,
   onAccount,
 }: {
@@ -45,6 +66,7 @@ export function Board({
   session: AppSession;
   scene: any;
   demo: boolean;
+  accountOpen?: boolean;
   onRooms: () => void;
   onAccount: () => void;
 }) {
@@ -87,7 +109,12 @@ export function Board({
     [material, setMaterial] = useState("ivory"),
     [result, setResult] = useState<DiceRoll | null>(null),
     [rolling, setRolling] = useState(false),
-    [diceDocked, setDiceDocked] = useState(false);
+    [diceDocked, setDiceDocked] = useState(false),
+    [hoveredDice, setHoveredDice] = useState<{
+      notation: string;
+      label: string;
+      count: number;
+    } | null>(null);
   const [hoverBlocked, setHoverBlocked] = useState(false);
   useEffect(() => {
     const hide = () => {
@@ -105,22 +132,15 @@ export function Board({
     return () => window.clearTimeout(timer);
   }, [copied]);
   useEffect(() => {
-    if (!roomMenu) return;
-    const dismiss = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest(".room-control"))
-        setRoomMenu(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRoomMenu(false);
-    };
-    window.addEventListener("pointerdown", dismiss);
-    window.addEventListener("keydown", escape);
-    return () => {
-      window.removeEventListener("pointerdown", dismiss);
-      window.removeEventListener("keydown", escape);
-    };
-  }, [roomMenu]);
+    if (accountOpen) {
+      setRoomMenu(false);
+      setOverlay(null);
+      setEdge(null);
+    }
+  }, [accountOpen]);
   const lastRoll = useRef<string | null>(null),
+    lastRollMeta = useRef<{ notation: string; label: string } | null>(null),
+    rollFromCorner = useRef(false),
     sourceNote = useRef<string | undefined>(undefined),
     bridge = useRef<BoardCallbacks>(null!);
   const safe = (operation: Promise<unknown>) =>
@@ -128,6 +148,7 @@ export function Board({
   const close = () => {
     setOverlay(null);
     setEdge(null);
+    setRoomMenu(false);
     if (route.kind !== "home") {
       const inspected =
         route.kind === "note"
@@ -139,12 +160,21 @@ export function Board({
   const inspect = (id: string) => {
     setOverlay(null);
     setEdge(null);
+    setRoomMenu(false);
     setHovered(null);
     navigateBoard(`/note/${encodeURIComponent(id)}`);
   };
-  async function roll(notation: string, label = "", noteId?: string) {
+  async function roll(
+    notation: string,
+    label = "",
+    noteId?: string,
+    fromCorner = false,
+  ) {
     sourceNote.current = noteId;
+    rollFromCorner.current = fromCorner;
+    lastRollMeta.current = { notation, label };
     setRolling(true);
+    setHoveredDice(null);
     setError("");
     try {
       const dice = await store.roll(notation, label);
@@ -161,6 +191,7 @@ export function Board({
           });
       }
     } catch (cause) {
+      rollFromCorner.current = false;
       setError(errorText(cause));
     } finally {
       setRolling(false);
@@ -176,6 +207,7 @@ export function Board({
       room.role !== "observer" &&
       (note.authorId === session.user.id || room.role === "gm"),
     canLink: () => room.role !== "observer",
+    canRoll: () => room.role !== "observer",
     onSelect: (id) => {
       if (linking) {
         if (linkStart) connect(id);
@@ -197,11 +229,17 @@ export function Board({
     onOpenArchive: () => {
       setOverlay(null);
       setEdge(null);
+      setRoomMenu(false);
       setHovered(null);
       navigateBoard("/archive");
     },
-    onClock: () => setOverlay("clock"),
+    onClock: () => {
+      setRoomMenu(false);
+      setEdge(null);
+      setOverlay("clock");
+    },
     onEdge: (nextEdge) => {
+      setRoomMenu(false);
       setOverlay(null);
       setHovered(null);
       setEdge(nextEdge);
@@ -219,6 +257,21 @@ export function Board({
       }
     },
     onLinkEnd: connect,
+    onDiceHover: (info) => setHoveredDice(info),
+    onDiceReroll: () => {
+      if (rolling) return;
+      const meta = lastRollMeta.current ?? scene?.dice?.getLastRollInfo?.();
+      if (meta?.notation) {
+        void roll(meta.notation, meta.label || "", undefined, true);
+      } else {
+        setOverlay("dice");
+      }
+    },
+    onDiceMenu: () => {
+      setRoomMenu(false);
+      setEdge(null);
+      setOverlay("dice");
+    },
   };
   useEffect(() => {
     void store.refresh();
@@ -232,13 +285,16 @@ export function Board({
           (bridge.current as any)[name](...args)),
     );
     scene.callbacks.onDiceSettled = (dice: DiceRoll) => setResult(dice);
-    scene.callbacks.onDiceState = (next: string) =>
+    scene.callbacks.onDiceState = (next: string) => {
       setDiceDocked(next === "docked");
+      if (next !== "docked") setHoveredDice(null);
+    };
     scene.enter(
       Boolean(localStorage.getItem(`veilboard:visited:${session.user.id}`)),
     );
     localStorage.setItem(`veilboard:visited:${session.user.id}`, "1");
     return () => {
+      scene.setAvoidanceZone?.(null);
       scene.setRouteView?.(false);
       scene.setUI(false);
       scene.sync({ notes: [], edges: [], clock: state.clock });
@@ -248,8 +304,25 @@ export function Board({
   useEffect(() => {
     scene?.sync(state);
   }, [scene, state.notes, state.edges, state.clock]);
-  const activeModal = Boolean(route.kind !== "home" || overlay || edge);
-  const overlayBlur = Boolean((overlay && overlay !== "surface") || edge);
+  const activeModal = Boolean(
+    route.kind !== "home" || overlay || edge || roomMenu || accountOpen,
+  );
+  const activeAvoidZone = useMemo(() => {
+    if (route.kind !== "home") return null;
+    if (accountOpen) return TRAY_MENU_ZONES.account;
+    if (overlay === "dice") return TRAY_MENU_ZONES.dice;
+    if (overlay === "surface") return TRAY_MENU_ZONES.surface;
+    if (overlay === "clock") return TRAY_MENU_ZONES.clock;
+    if (edge) return TRAY_MENU_ZONES.edge;
+    if (roomMenu) return TRAY_MENU_ZONES.roomMenu;
+    return null;
+  }, [route.kind, accountOpen, overlay, edge, roomMenu]);
+  useEffect(() => {
+    scene?.setAvoidanceZone?.(activeAvoidZone);
+  }, [scene, activeAvoidZone]);
+  useEffect(() => {
+    if (activeModal) setHoveredDice(null);
+  }, [activeModal]);
   useEffect(() => {
     if (!scene?.onIndentRect) {
       setIndentRect(null);
@@ -258,8 +331,8 @@ export function Board({
     return scene.onIndentRect((rect: IndentRect | null) => setIndentRect(rect));
   }, [scene]);
   useEffect(() => {
-    scene?.setUI(true, activeModal, overlayBlur);
-  }, [scene, activeModal, overlayBlur]);
+    scene?.setUI(true, activeModal, false);
+  }, [scene, activeModal]);
   useEffect(() => {
     scene?.setRouteView?.(route.kind !== "home");
   }, [scene, route.kind]);
@@ -270,7 +343,13 @@ export function Board({
   useEffect(() => {
     if (!state.roll?.result || state.roll.id === lastRoll.current) return;
     lastRoll.current = state.roll.id;
-    if (scene) scene.dice.throw(state.roll, material);
+    lastRollMeta.current = {
+      notation: state.roll.notation,
+      label: state.roll.label || "",
+    };
+    const fromCorner = rollFromCorner.current;
+    rollFromCorner.current = false;
+    if (scene) scene.dice.throw(state.roll, material, { fromCorner });
     else setResult(state.roll);
   }, [state.roll, scene, material]);
   const hoverNote = state.notes.find((n) => n.id === hovered) ?? null;
@@ -279,6 +358,9 @@ export function Board({
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
     : null;
   const isDarkTray = Boolean(resolveSurfaceTheme(surfaceTheme).tray.isDark);
+  useEffect(() => {
+    document.documentElement.dataset.trayTone = isDarkTray ? "dark" : "light";
+  }, [isDarkTray]);
   const showCornerBar = route.kind === "home";
   const cornerBarStyle = indentRect
     ? {
@@ -286,6 +368,12 @@ export function Board({
         top: `${indentRect.top + 22}px`,
         width: `${Math.max(220, indentRect.width - 56)}px`,
         right: "auto",
+      }
+    : undefined;
+  const dockHintStyle = indentRect
+    ? {
+        left: `${indentRect.left + 26}px`,
+        bottom: `${Math.max(24, window.innerHeight - (indentRect.top + indentRect.height) + 74)}px`,
       }
     : undefined;
   return (
@@ -299,96 +387,134 @@ export function Board({
           onEdge={setEdge}
           hovered={hovered}
           disabled={activeModal}
+          avoidZone={activeAvoidZone}
         />
       )}
       {showCornerBar && (
-      <div
-        className={`corner-bar ${indentRect ? "in-tray" : ""} ${isDarkTray ? "on-dark" : "on-light"}`}
-        style={cornerBarStyle}
-      >
-        <div className="room-control">
-          <button
-            className="room-name"
-            aria-expanded={roomMenu}
-            onClick={() => setRoomMenu(!roomMenu)}
-          >
-            {room.name}
-            <span>⌄</span>
-          </button>
-          {roomMenu && (
-            <div className="room-menu" role="menu">
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setRoomMenu(false);
-                  navigateBoard("/", { replace: true });
-                  onRooms();
-                }}
-              >
-                切换房间
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setRoomMenu(false);
-                  setOverlay(overlay === "surface" ? null : "surface");
-                }}
-              >
-                台面纹理
-              </button>
-              <button
-                role="menuitem"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(room.joinCode);
-                    setCopied(true);
-                  } catch {
-                    setError(`邀请码：${room.joinCode}`);
-                  }
-                }}
-              >
-                {copied ? "邀请码已复制" : `邀请码 · ${room.joinCode}`}
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="corner-actions">
-          {room.role !== "observer" && (
-            <>
-              <button
-                onClick={() => {
+        <div
+          className={`corner-bar ${indentRect ? "in-tray" : ""} ${isDarkTray ? "on-dark" : "on-light"}`}
+          style={cornerBarStyle}
+        >
+          <div className="room-control">
+            <button
+              className="room-name"
+              aria-expanded={roomMenu}
+              onClick={() => {
+                const next = !roomMenu;
+                setRoomMenu(next);
+                if (next) {
                   setOverlay(null);
                   setEdge(null);
-                  navigateBoard("/note/new");
-                }}
-              >
-                ＋ 便签
-              </button>
-              <button
-                aria-pressed={linking}
-                onClick={() => {
-                  setLinking(!linking);
-                  setLinkStart(null);
-                }}
-              >
-                {linking ? "取消连线" : "连线"}
-              </button>
-              <button onClick={() => setOverlay("dice")}>投骰</button>
-              <button
-                aria-pressed={overlay === "surface"}
-                onClick={() =>
-                  setOverlay(overlay === "surface" ? null : "surface")
                 }
-              >
-                台面
-              </button>
-            </>
-          )}
-          <button onClick={onAccount} aria-label="账号设置">
-            账号
-          </button>
+              }}
+            >
+              {room.name}
+              <span>⌄</span>
+            </button>
+          </div>
+          <div className="corner-actions">
+            {room.role !== "observer" && (
+              <>
+                <button
+                  onClick={() => {
+                    setRoomMenu(false);
+                    setOverlay(null);
+                    setEdge(null);
+                    navigateBoard("/note/new");
+                  }}
+                >
+                  ＋ 便签
+                </button>
+                <button
+                  aria-pressed={linking}
+                  onClick={() => {
+                    setRoomMenu(false);
+                    setLinking(!linking);
+                    setLinkStart(null);
+                  }}
+                >
+                  {linking ? "取消连线" : "连线"}
+                </button>
+                <button
+                  aria-pressed={overlay === "dice"}
+                  onClick={() => {
+                    setRoomMenu(false);
+                    setEdge(null);
+                    setOverlay(overlay === "dice" ? null : "dice");
+                  }}
+                >
+                  投骰
+                </button>
+                <button
+                  aria-pressed={overlay === "surface"}
+                  onClick={() => {
+                    setRoomMenu(false);
+                    setEdge(null);
+                    setOverlay(overlay === "surface" ? null : "surface");
+                  }}
+                >
+                  台面
+                </button>
+              </>
+            )}
+            <button
+              aria-pressed={accountOpen}
+              onClick={() => {
+                setRoomMenu(false);
+                setOverlay(null);
+                setEdge(null);
+                onAccount();
+              }}
+              aria-label="账号设置"
+            >
+              账号
+            </button>
+          </div>
         </div>
-      </div>
+      )}
+      {roomMenu && showCornerBar && (
+        <TrayOverlay
+          menu="roomMenu"
+          title="房间菜单"
+          hideHeader
+          onClose={() => setRoomMenu(false)}
+          indentRect={indentRect}
+        >
+          <div className="tray-room-menu-list" role="menu">
+            <button
+              role="menuitem"
+              onClick={() => {
+                setRoomMenu(false);
+                navigateBoard("/", { replace: true });
+                onRooms();
+              }}
+            >
+              切换房间
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setRoomMenu(false);
+                setOverlay("surface");
+              }}
+            >
+              台面纹理
+            </button>
+            <button
+              role="menuitem"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(room.joinCode);
+                  setCopied(true);
+                } catch {
+                  setError(`邀请码：${room.joinCode}`);
+                }
+              }}
+            >
+              {copied ? "邀请码已复制" : `邀请码 · ${room.joinCode}`}
+            </button>
+          </div>
+        </TrayOverlay>
       )}
       {scene && (
         <div className="scene-accessibility">
@@ -415,6 +541,15 @@ export function Board({
         hidden={activeModal || hoverBlocked}
         raised={diceDocked}
       />
+      {hoveredDice && !activeModal && diceDocked && (
+        <div className="dice-dock-hint" style={dockHintStyle} role="status">
+          <strong>
+            点击重投 · {hoveredDice.label ? `${hoveredDice.label} ` : ""}
+            {hoveredDice.notation}
+          </strong>
+          <span>右键换公式</span>
+        </div>
+      )}
       {(error || state.error) && (
         <div role="alert" className="board-error">
           <span>{error || state.error}</span>
@@ -493,7 +628,12 @@ export function Board({
         />
       )}
       {overlay === "clock" && (
-        <ClockDialog store={store} role={room.role} onClose={close} />
+        <ClockDialog
+          store={store}
+          role={room.role}
+          onClose={close}
+          indentRect={indentRect}
+        />
       )}
       {edge && (
         <EdgeDialog
@@ -501,14 +641,22 @@ export function Board({
           store={store}
           role={room.role}
           onClose={close}
+          indentRect={indentRect}
         />
       )}
       {overlay === "dice" && (
-        <PaperDialog title="投掷到台面" onClose={close}>
-          <div className="dice-presets">
-            {["1d20", "2d6", "1d100"].map((notation) => (
+        <TrayOverlay
+          menu="dice"
+          title="投掷骰子"
+          onClose={close}
+          indentRect={indentRect}
+        >
+          <div className="dice-preset-grid">
+            {DICE_PRESETS.map((notation) => (
               <button
                 key={notation}
+                type="button"
+                className="tray-chip"
                 onClick={() => setFormula(notation)}
                 aria-pressed={formula === notation}
               >
@@ -517,42 +665,67 @@ export function Board({
             ))}
           </div>
           <form
+            className="tray-overlay-form"
             onSubmit={(e) => {
               e.preventDefault();
               void roll(formula);
             }}
           >
-            <label>
-              骰子公式
+            <label className="tray-form-field">
+              <span>骰子公式</span>
               <input
                 value={formula}
                 onChange={(e) => setFormula(e.target.value)}
+                placeholder="例如 1d20、1d12+2、1d100"
                 required
                 maxLength={160}
               />
             </label>
-            <label>
-              材质
-              <select
-                value={material}
-                onChange={(e) => setMaterial(e.target.value)}
-              >
-                <option value="ivory">象牙白</option>
-                <option value="obsidian">黑曜石金字</option>
-                <option value="brass">复古黄铜</option>
-                <option value="jade">深绿翡翠</option>
-              </select>
-            </label>
+            <div className="tray-form-field">
+              <span>材质</span>
+              <div className="dice-material-pills">
+                {DICE_MATERIALS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="tray-chip"
+                    aria-pressed={material === item.id}
+                    onClick={() => setMaterial(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {error && (
-              <p className="error" role="alert">
+              <p className="tray-inline-error" role="alert">
                 {error}
               </p>
             )}
-            <button className="ink-button auth-submit" disabled={rolling}>
-              {rolling ? "投掷中…" : "投掷"}
-            </button>
+            <div className="tray-overlay-footer">
+              {diceDocked && (
+                <button
+                  type="button"
+                  className="tray-ghost-btn"
+                  onClick={() => {
+                    scene?.dice?.clear(false);
+                    setDiceDocked(false);
+                    setHoveredDice(null);
+                  }}
+                >
+                  清空桌面骰子
+                </button>
+              )}
+              <button
+                type="submit"
+                className="tray-primary-btn"
+                disabled={rolling}
+              >
+                {rolling ? "投掷中…" : "投掷"}
+              </button>
+            </div>
           </form>
-        </PaperDialog>
+        </TrayOverlay>
       )}
       {result?.result && !activeModal && (
         <div className="dice-result" role="status">

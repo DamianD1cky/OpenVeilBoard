@@ -1,7 +1,11 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Note, NoteEdge } from "../domain/types";
 import { capabilityRegistry } from "../domain/capabilityRegistry";
 import { visibleEdges, paperAspect } from "../domain/geometry.js";
+import {
+  computeAvoidanceOffsets,
+  type NormalizedRect,
+} from "../domain/avoidance";
 import { useClockText } from "./useClockText";
 import type { CampaignClockConfig } from "../features/campaign/domain/campaignClock";
 import { darkPaper } from "../domain/paperColors.js";
@@ -19,6 +23,12 @@ export interface BoardCallbacks {
   onLinkEnd: (id: string | null) => void;
   canEdit: (note: Note) => boolean;
   canLink?: () => boolean;
+  canRoll?: () => boolean;
+  onDiceHover?: (
+    info: { notation: string; label: string; count: number } | null,
+  ) => void;
+  onDiceReroll?: () => void;
+  onDiceMenu?: () => void;
 }
 export function FallbackBoard2D({
   notes,
@@ -28,6 +38,7 @@ export function FallbackBoard2D({
   onEdge,
   hovered,
   disabled,
+  avoidZone = null,
 }: {
   notes: Note[];
   edges: NoteEdge[];
@@ -36,6 +47,7 @@ export function FallbackBoard2D({
   onEdge: (edge: NoteEdge) => void;
   hovered: string | null;
   disabled: boolean;
+  avoidZone?: NormalizedRect | null;
 }) {
   const table = useRef<HTMLDivElement>(null);
   const [moving, setMoving] = useState<{
@@ -90,12 +102,42 @@ export function FallbackBoard2D({
       ),
     };
   };
+  const avoidOffsets = useMemo(() => {
+    if (!avoidZone) return new Map();
+    const width =
+      table.current?.clientWidth ||
+      innerWidth * (innerWidth <= 700 ? 0.94 : 0.92);
+    const height =
+      table.current?.clientHeight ||
+      innerHeight * (innerWidth <= 700 ? 0.94 : 0.92);
+    const active = notes.filter((n) => !n.archivedAt);
+    return computeAvoidanceOffsets(
+      active.map((n) => {
+        const size = paperSize(n);
+        const angle = (n.rotation * Math.PI) / 180;
+        const hw =
+          (Math.abs(Math.cos(angle)) * size.width +
+            Math.abs(Math.sin(angle)) * size.height) /
+          width /
+          2;
+        const hh =
+          (Math.abs(Math.sin(angle)) * size.width +
+            Math.abs(Math.cos(angle)) * size.height) /
+          height /
+          2;
+        return { id: n.id, x: n.x, y: n.y, halfW: hw, halfH: hh };
+      }),
+      avoidZone,
+    );
+  }, [notes, avoidZone]);
   const point = (note: Note) => {
     const p = moving?.id === note.id ? moving : note,
-      b = bounds(note);
+      b = bounds(note),
+      off = moving?.id === note.id ? null : avoidOffsets.get(note.id);
     return {
-      x: Math.max(-b.x, Math.min(b.x, p.x)),
-      y: Math.max(-b.y, Math.min(b.y, p.y)),
+      x: Math.max(-b.x, Math.min(b.x, p.x + (off?.dx ?? 0))),
+      y: Math.max(-b.y, Math.min(b.y, p.y + (off?.dy ?? 0))),
+      yaw: off?.yawDeg ?? 0,
     };
   };
   const pin = (note: Note) => {
@@ -256,7 +298,7 @@ export function FallbackBoard2D({
               style={{
                 left: `${(p.x + 0.5) * 100}%`,
                 top: `${(p.y + 0.5) * 100}%`,
-                transform: `translate(-50%, -50%) rotate(${note.rotation}deg)`,
+                transform: `translate(-50%, -50%) rotate(${note.rotation + p.yaw}deg)`,
                 zIndex: note.layer,
                 backgroundColor: /^#[\da-f]{6}$/i.test(note.color)
                   ? note.color

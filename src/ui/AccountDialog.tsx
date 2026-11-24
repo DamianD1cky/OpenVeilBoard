@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { PaperDialog } from "./PaperDialog";
+import type { IndentRect } from "./PaperDialog";
+import { TrayOverlay } from "./TrayOverlay";
 import {
   changePassword,
   updateAccountName,
@@ -21,16 +22,19 @@ import type {
   ActiveCampaignAccess,
   CampaignJoinRequest,
 } from "../features/access/domain/types";
+
 export function AccountDialog({
   session,
   room,
   onClose,
   onRefresh,
+  indentRect = null,
 }: {
   session: AppSession;
   room: ActiveCampaignAccess | null;
   onClose: () => void;
   onRefresh: () => Promise<void>;
+  indentRect?: IndentRect | null;
 }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -66,8 +70,14 @@ export function AccountDialog({
     }
   }
   return (
-    <PaperDialog title="账号" onClose={onClose}>
+    <TrayOverlay
+      menu="account"
+      title="账号"
+      onClose={onClose}
+      indentRect={indentRect}
+    >
       <form
+        className="tray-overlay-form"
         onSubmit={(e) => {
           e.preventDefault();
           const data = new FormData(e.currentTarget);
@@ -76,8 +86,8 @@ export function AccountDialog({
           );
         }}
       >
-        <label>
-          昵称
+        <label className="tray-form-field">
+          <span>昵称</span>
           <input
             name="displayName"
             required
@@ -85,10 +95,12 @@ export function AccountDialog({
             maxLength={32}
           />
         </label>
-        <button disabled={busy}>保存昵称</button>
+        <button className="tray-chip" disabled={busy}>
+          保存昵称
+        </button>
       </form>
       <form
-        className="password-form"
+        className="tray-overlay-form tray-overlay-divider"
         onSubmit={(e) => {
           e.preventDefault();
           const form = e.currentTarget,
@@ -103,8 +115,8 @@ export function AccountDialog({
           });
         }}
       >
-        <label>
-          当前密码
+        <label className="tray-form-field">
+          <span>当前密码</span>
           <input
             name="current"
             type="password"
@@ -112,8 +124,8 @@ export function AccountDialog({
             required
           />
         </label>
-        <label>
-          新密码
+        <label className="tray-form-field">
+          <span>新密码</span>
           <input
             name="next"
             type="password"
@@ -122,8 +134,8 @@ export function AccountDialog({
             required
           />
         </label>
-        <label>
-          确认新密码
+        <label className="tray-form-field">
+          <span>确认新密码</span>
           <input
             name="confirm"
             type="password"
@@ -131,15 +143,19 @@ export function AccountDialog({
             required
           />
         </label>
-        <button disabled={busy}>修改密码</button>
+        <button className="tray-chip" disabled={busy}>
+          修改密码
+        </button>
       </form>
       {requests.length > 0 && (
-        <section className="approval-list">
+        <section className="tray-approval-list tray-overlay-divider">
           <h3>房间加入申请</h3>
           {requests.map((r) => (
             <div key={r.id}>
               <span>{r.characterName}</span>
               <button
+                type="button"
+                className="tray-ghost-btn"
                 disabled={busy}
                 onClick={() =>
                   void execute(() => reviewCampaignJoin(r.id, false, ""))
@@ -148,6 +164,8 @@ export function AccountDialog({
                 拒绝
               </button>
               <button
+                type="button"
+                className="tray-chip"
                 disabled={busy}
                 onClick={() =>
                   void execute(() => reviewCampaignJoin(r.id, true, ""))
@@ -160,7 +178,7 @@ export function AccountDialog({
         </section>
       )}
       {applications.length > 0 && (
-        <section className="approval-list">
+        <section className="tray-approval-list tray-overlay-divider">
           <h3>GM 资格审核</h3>
           {applications.map((a) => (
             <div key={a.userId}>
@@ -168,6 +186,8 @@ export function AccountDialog({
                 {a.displayName} · {a.accountName}
               </span>
               <button
+                type="button"
+                className="tray-ghost-btn"
                 disabled={busy}
                 onClick={() =>
                   void execute(() => reviewGmApplication(a, false, ""))
@@ -176,6 +196,8 @@ export function AccountDialog({
                 拒绝
               </button>
               <button
+                type="button"
+                className="tray-chip"
                 disabled={busy || a.unavailable}
                 onClick={() =>
                   void execute(() => reviewGmApplication(a, true, ""))
@@ -188,14 +210,24 @@ export function AccountDialog({
         </section>
       )}
       {error && (
-        <p className="error" role="alert">
+        <p className="tray-inline-error" role="alert">
           {error}
         </p>
       )}
-      {saved && <p role="status">{saved}</p>}
-      <div className="dialog-footer">
-        <button onClick={() => void execute(signOut)}>退出账号</button>
+      {saved && (
+        <p className="tray-inline-status" role="status">
+          {saved}
+        </p>
+      )}
+      <div className="tray-overlay-footer tray-overlay-divider">
+        <button
+          type="button"
+          className="tray-ghost-btn danger"
+          onClick={() => void execute(signOut)}
+        >
+          退出账号
+        </button>
       </div>
-    </PaperDialog>
+    </TrayOverlay>
   );
 }

@@ -49,6 +49,8 @@ export class TableDiceLayer {
     this.exiting = new Set();
     this.state = "idle"; // "idle" | "rolling" | "settled" | "docked"
     this.swept = false;
+    this.dockBounds = null;
+    this.dockHovered = false;
     this.off = ctx.app.onFrame((_, dt) => this.frame(dt), -0.3);
     this.offCounter = ctx.counter.subscribe(() => {
       if (this.state === "docked" && !this.swept && this.dice.length) {
@@ -64,7 +66,7 @@ export class TableDiceLayer {
     this.ctx.onDiceState?.(next);
   }
 
-  throw(roll, preset = "ivory") {
+  throw(roll, preset = "ivory", { fromCorner = false } = {}) {
     if (!roll.result || roll.id === this.lastId) return;
     if (this.dice.length) {
       this.sweepOut(false);
@@ -72,6 +74,8 @@ export class TableDiceLayer {
     this.lastId = roll.id;
     this.roll = roll;
     this.swept = false;
+    this.dockBounds = null;
+    this.dockHovered = false;
     const { layout, floorY, zone } = this.ctx.counter.get();
     this.world = new CANNON.World({
       gravity: new CANNON.Vec3(0, -9.81, 0),
@@ -153,16 +157,29 @@ export class TableDiceLayer {
         sleepSpeedLimit: 0.11,
         sleepTimeLimit: 0.4,
       });
-      body.position.set(
-        -halfWidth * 0.7 + random() * 0.15,
-        floorY + 0.45 + i * 0.008,
-        (random() - 0.5) * halfHeight * 0.8,
-      );
-      body.velocity.set(
-        1.1 + random() * 1.3,
-        0.2 + random(),
-        (random() - 0.5) * 1.3,
-      );
+      if (fromCorner) {
+        body.position.set(
+          -halfWidth * 0.72 + (i % 4) * 0.06 + random() * 0.05,
+          floorY + 0.3 + i * 0.015,
+          halfHeight * 0.62 - Math.floor(i / 4) * 0.07 + (random() - 0.5) * 0.06,
+        );
+        body.velocity.set(
+          1.35 + random() * 1.15,
+          0.38 + random() * 0.55,
+          -1.05 - random() * 0.85,
+        );
+      } else {
+        body.position.set(
+          -halfWidth * 0.7 + random() * 0.15,
+          floorY + 0.45 + i * 0.008,
+          (random() - 0.5) * halfHeight * 0.8,
+        );
+        body.velocity.set(
+          1.1 + random() * 1.3,
+          0.2 + random(),
+          (random() - 0.5) * 1.3,
+        );
+      }
       body.angularVelocity.set(
         random() * 20 - 10,
         random() * 20 - 10,
@@ -322,12 +339,21 @@ export class TableDiceLayer {
     );
     const leftEdge = -layout.indentWidth / 2 + dockScale * 1.45 + 0.045;
     const bottomEdge = layout.indentHeight / 2 - dockScale * 1.45 - 0.045;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minZ = Infinity,
+      maxZ = -Infinity;
+    this.dockHovered = false;
 
     sorted.forEach((die, i) => {
       const col = i % maxCols;
       const row = Math.floor(i / maxCols);
       const tx = leftEdge + col * stepX;
       const tz = bottomEdge - row * stepZ;
+      minX = Math.min(minX, tx - dockScale * 1.25);
+      maxX = Math.max(maxX, tx + dockScale * 1.25);
+      minZ = Math.min(minZ, tz - dockScale * 1.25);
+      maxZ = Math.max(maxZ, tz + dockScale * 1.25);
       const heightRatio = dockScale / Math.max(die.baseScale, 0.001);
       const ty = floorY + Math.max(0.015, (die.restY - floorY) * heightRatio);
       die.dockPos.set(tx, ty, tz);
@@ -395,6 +421,52 @@ export class TableDiceLayer {
         },
       });
     });
+    this.dockBounds =
+      minX <= maxX && minZ <= maxZ ? { minX, maxX, minZ, maxZ } : null;
+  }
+
+  containsDocked(point) {
+    if (
+      !point ||
+      this.state !== "docked" ||
+      this.swept ||
+      !this.dice.length ||
+      !this.dockBounds
+    ) {
+      return false;
+    }
+    const pad = 0.055;
+    return (
+      point.x >= this.dockBounds.minX - pad &&
+      point.x <= this.dockBounds.maxX + pad &&
+      point.z >= this.dockBounds.minZ - pad &&
+      point.z <= this.dockBounds.maxZ + pad
+    );
+  }
+
+  setDockedHover(on) {
+    const next = Boolean(on) && this.state === "docked" && !this.swept;
+    if (this.dockHovered === next) return;
+    this.dockHovered = next;
+    if (!this.dice.length || this.state !== "docked" || this.swept) return;
+    this.dice.forEach((die, i) => {
+      gsap.to(die.group.position, {
+        y: die.dockPos.y + (next ? 0.022 : 0),
+        duration: whenMotion(next ? 0.22 : 0.26),
+        delay: whenMotion(Math.min(0.08, i * 0.012)),
+        ease: "power2.out",
+        overwrite: "auto",
+      });
+    });
+  }
+
+  getLastRollInfo() {
+    if (!this.roll || !this.dice.length) return null;
+    return {
+      notation: this.roll.notation,
+      label: this.roll.label || "",
+      count: this.dice.length,
+    };
   }
 
   /**
@@ -446,6 +518,8 @@ export class TableDiceLayer {
     this.settled = true;
     this.stats.stepping = false;
     this.stats.bodies = 0;
+    this.dockBounds = null;
+    this.dockHovered = false;
     this.setState("idle");
 
     let fired = false;
@@ -503,6 +577,8 @@ export class TableDiceLayer {
     this.dice = [];
     this.world = null;
     this.stats.bodies = 0;
+    this.dockBounds = null;
+    this.dockHovered = false;
     this.setState("idle");
     const { layout, floorY } = this.ctx.counter.get();
     const exitX = layout ? -layout.indentWidth * 0.5 - 0.5 : -2.5;
