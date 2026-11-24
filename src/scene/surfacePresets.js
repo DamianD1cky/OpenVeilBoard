@@ -581,3 +581,24 @@ export async function loadSurfaceTextureSet(slotConfig, anisotropy = 11) {
   }
   return textureSetCache.get(genKey);
 }
+
+export function applyTrayInkTokens(theme) {
+  if (typeof document === "undefined") return;
+  const resolved = resolveSurfaceTheme(theme);
+  const tray = resolved.tray;
+  const root = document.documentElement;
+  const isDark = Boolean(tray.isDark);
+  root.dataset.trayTone = isDark ? "dark" : "light";
+  root.style.setProperty(
+    "--tray-stamp-ink",
+    tray.stampInk ?? (isDark ? "#d8bc82" : "#514b3e"),
+  );
+  root.style.setProperty(
+    "--tray-stamp-strong",
+    tray.stampHoverInk ?? (isDark ? "#f5dfad" : "#2a241b"),
+  );
+  root.style.setProperty(
+    "--tray-stamp-muted",
+    tray.wellInk ?? (isDark ? "#cbb078" : "#655d4c"),
+  );
+}

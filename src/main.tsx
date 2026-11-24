@@ -10,6 +10,7 @@ import { RoomLobby } from "./ui/RoomLobby";
 import { AccountDialog } from "./ui/AccountDialog";
 import { Board } from "./ui/Board";
 import type { IndentRect } from "./ui/PaperDialog";
+import { applyTrayInkTokens } from "./scene/surfacePresets.js";
 import {
   unlockAudio,
   setAmbientTrack,
@@ -128,7 +129,7 @@ function Application({
   }, [session?.user.id]);
   useEffect(() => {
     if (!room) {
-      document.documentElement.dataset.trayTone = "light";
+      applyTrayInkTokens(null);
       scene?.setAvoidanceZone?.(null);
       scene?.setUI(false, true, false);
     }

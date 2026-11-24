@@ -22,6 +22,7 @@ import { PaperDialog, type IndentRect } from "./PaperDialog";
 import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
 import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
 import {
+  applyTrayInkTokens,
   loadSavedSurfaceTheme,
   resolveSurfaceTheme,
   saveSurfaceTheme,
@@ -289,9 +290,7 @@ export function Board({
       setDiceDocked(next === "docked");
       if (next !== "docked") setHoveredDice(null);
     };
-    scene.enter(
-      Boolean(localStorage.getItem(`veilboard:visited:${session.user.id}`)),
-    );
+    scene.enter(true);
     localStorage.setItem(`veilboard:visited:${session.user.id}`, "1");
     return () => {
       scene.setAvoidanceZone?.(null);
@@ -359,8 +358,8 @@ export function Board({
     : null;
   const isDarkTray = Boolean(resolveSurfaceTheme(surfaceTheme).tray.isDark);
   useEffect(() => {
-    document.documentElement.dataset.trayTone = isDarkTray ? "dark" : "light";
-  }, [isDarkTray]);
+    applyTrayInkTokens(surfaceTheme);
+  }, [surfaceTheme]);
   const showCornerBar = route.kind === "home";
   const cornerBarStyle = indentRect
     ? {

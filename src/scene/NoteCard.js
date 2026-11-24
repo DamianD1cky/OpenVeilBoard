@@ -352,14 +352,43 @@ export class NoteCard {
     gsap.killTweensOf(this.object.position);
     this.wakeWiggle();
     gsap.to(this.object.position, {
-      x: this.aim.x,
-      z: this.aim.z,
+      x: this.aim.x + this.avoid.x,
+      z: this.aim.z + this.avoid.z,
       y: this.floor,
       duration: whenMotion(0.68),
       delay: whenMotion(delaySec),
       ease: "power3.out",
+      onUpdate: () => {
+        this.wakeLinks();
+      },
       onComplete: () => {
         this.swept = false;
+        this.wakeWiggle();
+        this.wakeLinks();
+      },
+    });
+  }
+  enterFromLeft(exitX, startZ, lift = 0.3, delaySec = 0) {
+    this.printing = true;
+    this.swept = false;
+    gsap.killTweensOf(this.object.position);
+    gsap.killTweensOf(this.object.rotation);
+    this.object.position.set(exitX, this.floor + lift, startZ);
+    this.object.scale.setScalar(1);
+    this.resetWiggle();
+    this.wakeLinks();
+    gsap.to(this.object.position, {
+      x: this.aim.x + this.avoid.x,
+      z: this.aim.z + this.avoid.z,
+      y: this.floor,
+      duration: whenMotion(0.68),
+      delay: whenMotion(delaySec),
+      ease: "power3.out",
+      onUpdate: () => {
+        this.wakeLinks();
+      },
+      onComplete: () => {
+        this.printing = false;
         this.wakeWiggle();
         this.wakeLinks();
       },

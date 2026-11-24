@@ -1,6 +1,5 @@
 import { Raycaster, Plane, Vector2, Vector3, Group } from "../engine/index.js";
 import { NoteCard } from "./NoteCard.js";
-import { printNote } from "./PrintNote.js";
 import {
   createDropMagnet,
   updateDropMagnet,
@@ -100,23 +99,41 @@ export class NoteField {
         card.dispose();
         this.cards.delete(id);
       }
+    const added = [];
     for (const note of active) {
       let card = this.cards.get(note.id);
       if (!card) {
         card = new NoteCard(this.ctx, note, this.cardWidth());
         this.cards.set(note.id, card);
         this.object.add(card.object);
-        if (this.swept) {
-          const { layout } = this.ctx.counter.get();
-          const exitX = -layout.indentWidth * 0.5 - card.width * 1.5;
-          card.swept = true;
-          card.object.position.set(exitX, card.floor + 0.35, card.aim.z);
-        } else {
-          printNote(card);
-        }
+        added.push(card);
       } else card.update(note);
     }
     if (this.avoidZone) this.applyAvoidance(false);
+    if (added.length) {
+      const { layout, zone } = this.ctx.counter.get();
+      const exitX = layout
+        ? -layout.indentWidth * 0.5 - this.cardWidth() * 1.5
+        : -2.8;
+      if (this.swept) {
+        for (const card of added) {
+          card.swept = true;
+          card.object.position.set(exitX, card.floor + 0.35, card.aim.z);
+        }
+      } else {
+        added.sort((a, b) => b.aim.x - a.aim.x);
+        playSound("polaroid.shuffle", { pan: -0.35 });
+        added.forEach((card, i) => {
+          const jitter = zone ? (card.aim.z - zone.z) * 0.06 : 0;
+          card.enterFromLeft(
+            exitX,
+            card.aim.z + jitter,
+            0.28 + Math.min(i, 6) * 0.045,
+            Math.min(i, 8) * 0.055,
+          );
+        });
+      }
+    }
   }
   setAvoidanceZone(zone) {
     this.avoidZone = zone ?? null;
