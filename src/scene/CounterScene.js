@@ -48,6 +48,7 @@ export class CounterScene {
     this.indentListeners = new Set();
     this.layoutCam = new PerspectiveCamera(32, 1, 0.1, 80);
     this.routeActive = false;
+    this.pendingSnapshot = null;
     this.ctx = {
       app,
       controls: structuredClone(FACTORY_DEFAULTS),
@@ -187,6 +188,11 @@ export class CounterScene {
           (this.projection?.lightboxProgress ?? 0) * 0.85,
         );
         ctx.post.render(app.scene, app.camera, null);
+        if (this.pendingSnapshot) {
+          const req = this.pendingSnapshot;
+          this.pendingSnapshot = null;
+          this.fulfillDiceSnapshot(req);
+        }
       }, 1),
     );
     await Promise.all([
@@ -306,6 +312,194 @@ export class CounterScene {
   setAvoidanceZone(zone) {
     this.field?.setAvoidanceZone(zone);
   }
+  captureDiceSnapshot() {
+    if (this.disposed || !this.app?.canvas) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingSnapshot?.resolve === done) {
+          this.pendingSnapshot = null;
+          resolve(null);
+        }
+      }, 1500);
+      const done = (file) => {
+        clearTimeout(timer);
+        resolve(file);
+      };
+      this.pendingSnapshot = { resolve: done };
+    });
+  }
+  fulfillDiceSnapshot({ resolve }) {
+    try {
+      const canvas = this.app.canvas;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      if (!cw || !ch) {
+        resolve(null);
+        return;
+      }
+      const dprX = cw / Math.max(this.app.size.width || cw, 1);
+      const dprY = ch / Math.max(this.app.size.height || ch, 1);
+      const indent = this.getIndentRect();
+      const trayLeft = indent ? Math.max(0, indent.left * dprX) : 0;
+      const trayTop = indent ? Math.max(0, indent.top * dprY) : 0;
+      const trayW = indent
+        ? Math.min(cw - trayLeft, indent.width * dprX)
+        : cw;
+      const trayH = indent
+        ? Math.min(ch - trayTop, indent.height * dprY)
+        : ch;
+
+      const diceBounds = this.dice?.getScreenBounds(this.app.camera, cw, ch);
+      let sx = trayLeft,
+        sy = trayTop,
+        sw = trayW,
+        sh = trayH;
+
+      if (diceBounds) {
+        const spanW = diceBounds.maxX - diceBounds.minX;
+        const spanH = diceBounds.maxY - diceBounds.minY;
+        const padX = Math.max(spanW * 0.45, trayW * 0.14);
+        const padY = Math.max(spanH * 0.45, trayH * 0.14);
+        let cropW = Math.max(spanW + padX * 2, trayW * 0.36);
+        let cropH = Math.max(spanH + padY * 2, trayH * 0.36);
+        // Aim for a clean 4:3 polaroid framing while keeping all dice inside
+        const targetAspect = 4 / 3;
+        if (cropW / cropH < targetAspect) {
+          cropW = cropH * targetAspect;
+        } else {
+          cropH = cropW / targetAspect;
+        }
+        if (cropW > trayW) {
+          cropW = trayW;
+          cropH = Math.min(trayH, Math.max(spanH + padY, cropW / targetAspect));
+        }
+        if (cropH > trayH) {
+          cropH = trayH;
+          cropW = Math.min(trayW, Math.max(spanW + padX, cropH * targetAspect));
+        }
+        const cx = (diceBounds.minX + diceBounds.maxX) * 0.5;
+        const cy = (diceBounds.minY + diceBounds.maxY) * 0.5;
+        sx = Math.max(
+          trayLeft,
+          Math.min(trayLeft + trayW - cropW, cx - cropW * 0.5),
+        );
+        sy = Math.max(
+          trayTop,
+          Math.min(trayTop + trayH - cropH, cy - cropH * 0.5),
+        );
+        sw = cropW;
+        sh = cropH;
+      }
+
+      const ix = Math.max(0, Math.min(cw - 1, Math.round(sx)));
+      const iy = Math.max(0, Math.min(ch - 1, Math.round(sy)));
+      const iw = Math.max(1, Math.min(cw - ix, Math.round(sw)));
+      const ih = Math.max(1, Math.min(ch - iy, Math.round(sh)));
+
+      const device = this.app.renderer?.device;
+      const context = this.app.renderer?.context;
+      const format = this.app.renderer?.format ?? "bgra8unorm";
+      if (!device || !context) {
+        resolve(null);
+        return;
+      }
+      if (this.app.renderer.encoder) {
+        this.app.renderer.endFrame();
+      }
+      const tex = context.getCurrentTexture();
+      const copyW = Math.max(1, Math.min(tex.width - ix, iw));
+      const copyH = Math.max(1, Math.min(tex.height - iy, ih));
+      const bytesPerRow = Math.ceil((copyW * 4) / 256) * 256;
+      const readBuf = device.createBuffer({
+        size: bytesPerRow * copyH,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: tex, origin: { x: ix, y: iy, z: 0 } },
+        { buffer: readBuf, bytesPerRow, rowsPerImage: copyH },
+        { width: copyW, height: copyH, depthOrArrayLayers: 1 },
+      );
+      device.queue.submit([encoder.finish()]);
+
+      const isBGRA = format.startsWith("bgra");
+      void readBuf
+        .mapAsync(GPUMapMode.READ)
+        .then(() => {
+          try {
+            const mapped = new Uint8Array(readBuf.getMappedRange());
+            const srcCanvas = document.createElement("canvas");
+            srcCanvas.width = copyW;
+            srcCanvas.height = copyH;
+            const srcCtx = srcCanvas.getContext("2d");
+            if (!srcCtx) {
+              resolve(null);
+              return;
+            }
+            const imgData = srcCtx.createImageData(copyW, copyH);
+            const dst = imgData.data;
+            for (let y = 0; y < copyH; y++) {
+              const rowStart = y * bytesPerRow;
+              const dstRow = y * copyW * 4;
+              for (let x = 0; x < copyW; x++) {
+                const si = rowStart + x * 4;
+                const di = dstRow + x * 4;
+                if (isBGRA) {
+                  dst[di] = mapped[si + 2];
+                  dst[di + 1] = mapped[si + 1];
+                  dst[di + 2] = mapped[si];
+                } else {
+                  dst[di] = mapped[si];
+                  dst[di + 1] = mapped[si + 1];
+                  dst[di + 2] = mapped[si + 2];
+                }
+                dst[di + 3] = 255;
+              }
+            }
+            srcCtx.putImageData(imgData, 0, 0);
+
+            const maxOutW = 1200;
+            const outW = Math.max(320, Math.min(maxOutW, copyW));
+            const outH = Math.max(240, Math.round((outW * copyH) / copyW));
+            const outCanvas = document.createElement("canvas");
+            outCanvas.width = outW;
+            outCanvas.height = outH;
+            const outCtx = outCanvas.getContext("2d");
+            if (!outCtx) {
+              resolve(null);
+              return;
+            }
+            outCtx.drawImage(srcCanvas, 0, 0, copyW, copyH, 0, 0, outW, outH);
+            outCanvas.toBlob(
+              (blob) => {
+                if (!blob) {
+                  resolve(null);
+                  return;
+                }
+                resolve(
+                  new File([blob], `dice-roll-${Date.now()}.jpg`, {
+                    type: "image/jpeg",
+                  }),
+                );
+              },
+              "image/jpeg",
+              0.9,
+            );
+          } finally {
+            readBuf.unmap();
+            readBuf.destroy();
+          }
+        })
+        .catch(() => {
+          try {
+            readBuf.destroy();
+          } catch {}
+          resolve(null);
+        });
+    } catch {
+      resolve(null);
+    }
+  }
   burnNote(id, done) {
     this.field.burnAndRemove(id, done);
   }
@@ -336,7 +530,7 @@ export class CounterScene {
       frame: this.app.frame,
       dpr: this.app.viewport.dpr,
       ropes: { count: this.rope.links.size, ...this.rope.stats },
-      dice: { ...this.dice.stats },
+      dice: { ...this.dice.stats, exiting: this.dice.exiting.size },
       archive: project(new Vector3(zone.x, floorY, zone.z)),
       cards: [...this.field.cards.values()].map((c) => {
         const p = c.object

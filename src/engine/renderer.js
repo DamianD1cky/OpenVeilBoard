@@ -258,6 +258,7 @@ export class Renderer {
     this.context.configure({
       device,
       format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       alphaMode: options.alphaMode ?? `premultiplied`,
     });
     this.pixelRatio = 1;

@@ -110,6 +110,7 @@ export function Board({
     [material, setMaterial] = useState("ivory"),
     [result, setResult] = useState<DiceRoll | null>(null),
     [rolling, setRolling] = useState(false),
+    [savingRollNote, setSavingRollNote] = useState(false),
     [diceDocked, setDiceDocked] = useState(false),
     [hoveredDice, setHoveredDice] = useState<{
       notation: string;
@@ -196,6 +197,56 @@ export function Board({
       setError(errorText(cause));
     } finally {
       setRolling(false);
+    }
+  }
+  async function saveRollAsPolaroid(rollRecord: DiceRoll) {
+    if (!rollRecord.result || savingRollNote) return;
+    setSavingRollNote(true);
+    setError("");
+    try {
+      const snapshotFile = await scene?.captureDiceSnapshot?.().catch(() => null);
+      let imagePath: string | null = null;
+      let imageUrl: string | null = null;
+      if (snapshotFile) {
+        try {
+          imagePath = await store.repository.upload(snapshotFile);
+          imageUrl = await store.repository.imageUrl(imagePath);
+        } catch (uploadCause) {
+          setError(`现场照片上传失败，已仅保存点数：${errorText(uploadCause)}`);
+        }
+      }
+      setResult(null);
+      scene?.dice?.tidyToCorner?.();
+      const total = rollRecord.result.total;
+      const title = rollRecord.label
+        ? `${rollRecord.label} · ${total}`
+        : `投骰留影 · ${rollRecord.notation} = ${total}`;
+      const body = [
+        `公式：${rollRecord.notation}`,
+        `明细：${rollRecord.result.output}`,
+        `总点数：${total}`,
+      ].join("\n");
+      await store.create({
+        title,
+        body,
+        cardStyle: imagePath ? "polaroid" : "dossier",
+        imagePath,
+        media: imagePath
+          ? [
+              {
+                id: `dice-${rollRecord.id}`,
+                path: imagePath,
+                url: imageUrl,
+                caption: `${rollRecord.notation} = ${total}`,
+              },
+            ]
+          : [],
+        capabilities: [],
+      });
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setSavingRollNote(false);
     }
   }
   const connect = (id: string | null) => {
@@ -734,22 +785,10 @@ export function Board({
           </span>
           {room.role !== "observer" && (
             <button
-              onClick={() => {
-                const payload = {
-                  title: result.label || "投骰记录",
-                  body: result.result!.output,
-                  cardStyle: "dossier" as const,
-                  capabilities: [],
-                };
-                setResult(null);
-                if (scene?.dice?.collectIntoSlot) {
-                  scene.dice.collectIntoSlot(() => safe(store.create(payload)));
-                } else {
-                  safe(store.create(payload));
-                }
-              }}
+              disabled={savingRollNote}
+              onClick={() => void saveRollAsPolaroid(result)}
             >
-              贴成便签
+              {savingRollNote ? "拍摄中…" : "贴成便签"}
             </button>
           )}
           <button
