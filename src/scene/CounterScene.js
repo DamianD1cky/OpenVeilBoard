@@ -138,8 +138,8 @@ export class CounterScene {
     this.opening = new Opening(ctx);
     this.dust = new DustField(ctx);
     if (this.dust.object) app.scene.add(this.dust.object);
-    this.blur = { value: 0.72 };
-    this.blurTarget = 0.72;
+    this.blur = { value: 0 };
+    this.blurTarget = 0;
     const budget = createRenderBudget({
       dprMin: c.scene.dprMin,
       dprMax: c.scene.dprMax,
@@ -315,7 +315,7 @@ export class CounterScene {
   }
   setUI(active, inspect = false, blur = inspect) {
     this.field.enabled = active && !inspect;
-    this.blurTarget = !active ? 0.72 : blur ? 0.45 : 0;
+    this.blurTarget = blur ? 0.45 : 0;
   }
   enter(skip = false) {
     this.opening.play(skip);

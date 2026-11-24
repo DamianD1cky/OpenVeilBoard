@@ -99,12 +99,15 @@ export class SurfaceClock3D {
   frame() {
     const { layout, floorY } = this.ctx.counter.get();
     if (!layout) return;
+    const narrow = (this.ctx.app.size?.width ?? 1280) < 920;
     this.object.position.set(
       0,
       floorY + 0.002,
-      -layout.indentHeight / 2 + 0.22,
+      -layout.indentHeight / 2 + (narrow ? 0.34 : 0.19),
     );
-    this.object.scale.setScalar(Math.min(1, layout.indentWidth / 2.3));
+    this.object.scale.setScalar(
+      Math.min(narrow ? 0.85 : 1, layout.indentWidth / (narrow ? 2.5 : 2.3)),
+    );
     const tick = Math.floor(Date.now() / 1000);
     if (this.clock && (this.dirty || tick !== this.tick)) {
       this.tick = tick;

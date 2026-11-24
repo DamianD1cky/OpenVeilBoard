@@ -9,6 +9,7 @@ import { AuthSplash } from "./ui/AuthSplash";
 import { RoomLobby } from "./ui/RoomLobby";
 import { AccountDialog } from "./ui/AccountDialog";
 import { Board } from "./ui/Board";
+import type { IndentRect } from "./ui/PaperDialog";
 import {
   unlockAudio,
   setAmbientTrack,
@@ -59,7 +60,15 @@ function Application({
     ),
     [account, setAccount] = useState(false),
     [auto, setAuto] = useState(true),
-    [scene, setScene] = useState<any>(null);
+    [scene, setScene] = useState<any>(null),
+    [indentRect, setIndentRect] = useState<IndentRect | null>(null);
+  useEffect(() => {
+    if (!scene?.onIndentRect) {
+      setIndentRect(null);
+      return;
+    }
+    return scene.onIndentRect((rect: IndentRect | null) => setIndentRect(rect));
+  }, [scene]);
   useEffect(() => {
     let disposed = false,
       live: any;
@@ -118,10 +127,10 @@ function Application({
     }
   }, [session?.user.id]);
   useEffect(() => {
-    if (!room) scene?.setUI(false, true);
-  }, [room, scene]);
+    if (!room) scene?.setUI(false, true, account);
+  }, [room, scene, account]);
   useEffect(() => {
-    if (room) scene?.setUI(true, account);
+    if (room) scene?.setUI(true, account, account);
   }, [account]);
   const enter = (next: ActiveCampaignAccess) => {
     if (session)
@@ -134,7 +143,12 @@ function Application({
   return (
     <>
       {!session ? (
-        <AuthSplash loading={loading} error={error} onAuth={refresh} />
+        <AuthSplash
+          loading={loading}
+          error={error}
+          onAuth={refresh}
+          indentRect={indentRect}
+        />
       ) : room ? (
         <Board
           key={`${room.campaignId}:${session.user.id}`}
@@ -155,6 +169,7 @@ function Application({
           onEnter={enter}
           allowAuto={auto}
           onAccount={() => setAccount(true)}
+          indentRect={indentRect}
         />
       )}
       {account && session && !demo && (

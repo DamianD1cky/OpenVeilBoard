@@ -22,6 +22,7 @@ import { PaperDialog, type IndentRect } from "./PaperDialog";
 import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
 import {
   loadSavedSurfaceTheme,
+  resolveSurfaceTheme,
   saveSurfaceTheme,
 } from "../scene/surfacePresets.js";
 import { boardPlacement } from "./boardPlacement";
@@ -277,6 +278,16 @@ export function Board({
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
     : null;
+  const isDarkTray = Boolean(resolveSurfaceTheme(surfaceTheme).tray.isDark);
+  const showCornerBar = route.kind === "home";
+  const cornerBarStyle = indentRect
+    ? {
+        left: `${indentRect.left + 28}px`,
+        top: `${indentRect.top + 22}px`,
+        width: `${Math.max(220, indentRect.width - 56)}px`,
+        right: "auto",
+      }
+    : undefined;
   return (
     <>
       {!scene && (
@@ -290,7 +301,11 @@ export function Board({
           disabled={activeModal}
         />
       )}
-      <div className="corner-bar">
+      {showCornerBar && (
+      <div
+        className={`corner-bar ${indentRect ? "in-tray" : ""} ${isDarkTray ? "on-dark" : "on-light"}`}
+        style={cornerBarStyle}
+      >
         <div className="room-control">
           <button
             className="room-name"
@@ -374,6 +389,7 @@ export function Board({
           </button>
         </div>
       </div>
+      )}
       {scene && (
         <div className="scene-accessibility">
           <button onClick={() => setOverlay("clock")}>战役时钟</button>
@@ -468,6 +484,7 @@ export function Board({
       {overlay === "surface" && (
         <SurfaceThemeDrawer
           theme={surfaceTheme}
+          indentRect={indentRect}
           onChange={(next) => {
             setSurfaceTheme(next);
             saveSurfaceTheme(room.campaignId, next);

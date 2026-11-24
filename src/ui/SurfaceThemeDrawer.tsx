@@ -1,8 +1,10 @@
+import type { CSSProperties } from "react";
 import {
   SURFACE_MATERIALS,
   SURFACE_THEME_PRESETS,
 } from "../scene/surfacePresets.js";
 import type { SurfaceTheme } from "../domain/types";
+import type { IndentRect } from "./PaperDialog";
 
 const MATERIAL_OPTIONS = Object.values(SURFACE_MATERIALS);
 
@@ -10,14 +12,23 @@ export function SurfaceThemeDrawer({
   theme,
   onChange,
   onClose,
+  indentRect = null,
 }: {
   theme: SurfaceTheme;
   onChange: (next: SurfaceTheme) => void;
   onClose: () => void;
+  indentRect?: IndentRect | null;
 }) {
+  const drawerStyle: CSSProperties | undefined = indentRect
+    ? {
+        top: `${indentRect.top + 52}px`,
+        right: `${Math.max(16, window.innerWidth - (indentRect.left + indentRect.width) + 20)}px`,
+      }
+    : undefined;
   return (
     <aside
       className="surface-theme-drawer"
+      style={drawerStyle}
       role="dialog"
       aria-label="台面外框与内槽纹理"
     >
