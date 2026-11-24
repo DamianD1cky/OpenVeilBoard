@@ -10,15 +10,32 @@ export function createLocalRepository(campaignId: string): BoardRepository {
       const saved = localStorage.getItem(key);
       if (saved) return JSON.parse(saved);
     } catch {}
-    return {
-      notes: demoNotes(campaignId),
-      edges: [],
-      clock: {
-        ...defaultCampaignClock(new Date("1893-11-24T22:15:00")),
-        running: false,
-      },
-      members: [{ userId: "demo", name: "守秘人", role: "gm" }],
-    };
+      return {
+        notes: demoNotes(campaignId),
+        edges: [
+          {
+            id: "demo-edge-0",
+            fromNoteId: "demo-note-0",
+            toNoteId: "demo-note-1",
+            label: "22:15 怀表线索",
+            color: "#b83227",
+            style: "rope",
+          },
+          {
+            id: "demo-edge-1",
+            fromNoteId: "demo-note-1",
+            toNoteId: "demo-note-3",
+            label: "铜扣",
+            color: "#b83227",
+            style: "rope",
+          },
+        ],
+        clock: {
+          ...defaultCampaignClock(new Date("1893-11-24T22:15:00")),
+          running: false,
+        },
+        members: [{ userId: "demo", name: "守秘人", role: "gm" }],
+      };
   };
   const write = (state: any) => {
     localStorage.setItem(key, JSON.stringify(state));
@@ -33,7 +50,17 @@ export function createLocalRepository(campaignId: string): BoardRepository {
     },
     async create(note) {
       const state = read();
-      const saved = { ...note, imageUrl: note.imagePath };
+      const media = (note.media ?? []).map((m) => ({
+        ...m,
+        url: m.url ?? m.path,
+      }));
+      const firstPath = note.imagePath ?? media[0]?.path ?? null;
+      const saved = {
+        ...note,
+        media,
+        imagePath: firstPath,
+        imageUrl: firstPath,
+      };
       state.notes.push(saved);
       write(state);
       return saved;
@@ -48,10 +75,22 @@ export function createLocalRepository(campaignId: string): BoardRepository {
         )
       )
         throw new Error("NOTE_CONFLICT");
+      const nextMedia =
+        "media" in patch
+          ? (patch.media ?? []).map((m) => ({ ...m, url: m.url ?? m.path }))
+          : current.media ?? [];
+      const nextImagePath =
+        "imagePath" in patch
+          ? patch.imagePath
+          : "media" in patch
+            ? (nextMedia[0]?.path ?? null)
+            : current.imagePath;
       const saved = {
         ...current,
         ...patch,
-        imageUrl: "imagePath" in patch ? patch.imagePath : current.imageUrl,
+        media: nextMedia,
+        imagePath: nextImagePath,
+        imageUrl: nextImagePath,
         version: current.version + 1,
         updatedAt: new Date().toISOString(),
       };
@@ -241,6 +280,18 @@ function demoNotes(campaignId: string) {
       pinColor: i === 1 ? "blue" : "red",
       imagePath: null,
       imageUrl: null,
+      media: [],
+      burn:
+        i === 3
+          ? {
+              mode: "scorched",
+              topology: "corner",
+              progress: 0.24,
+              origin: [0.9, 0.14],
+              glowIntensity: 2.2,
+              seed: 11.4,
+            }
+          : null,
       capabilities: (capabilities as any[]).map((c) => ({
         ...c,
         enabled: true,

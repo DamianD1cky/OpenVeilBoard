@@ -73,7 +73,8 @@ export class ArchiveWell {
   }
   setArchived(archivedNotes = []) {
     const count = archivedNotes.length;
-    this.stamp.draw(`便签盒 · ${String(count).padStart(2, "0")}`, "#655d4c");
+    const ink = this.ctx.surfaceInk?.wellInk ?? "#655d4c";
+    this.stamp.draw(`便签盒 · ${String(count).padStart(2, "0")}`, ink);
     if (!count) {
       this.preview.visible = false;
       this.previewKey = null;
@@ -127,7 +128,8 @@ export class ArchiveWell {
     }
   }
   setCount(count) {
-    this.stamp.draw(`便签盒 · ${String(count).padStart(2, "0")}`, "#655d4c");
+    const ink = this.ctx.surfaceInk?.wellInk ?? "#655d4c";
+    this.stamp.draw(`便签盒 · ${String(count).padStart(2, "0")}`, ink);
     if (!count) this.preview.visible = false;
   }
   highlight(active, point, hint = false) {

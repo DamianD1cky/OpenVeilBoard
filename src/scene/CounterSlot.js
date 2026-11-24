@@ -7,13 +7,13 @@ import {
 import { applyPlanarUVs } from "../shared/counterGeometry.js";
 import { gsap, whenMotion } from "../shared/motion.js";
 export class CounterSlot {
-  constructor(slot, floorY, plaster) {
+  constructor(slot, floorY, plaster, baseColor = "#24211c") {
     this.slot = slot;
     this.object = new Group();
     this.object.position.set(slot.x, floorY + 0.0005, slot.z);
     const base = new Mesh(
       new PlaneGeometry(slot.width, slot.height),
-      new MeshBasicMaterial({ color: "#24211c" }),
+      new MeshBasicMaterial({ color: baseColor }),
     );
     base.rotation.x = -Math.PI / 2;
     base.position.y = -0.005;

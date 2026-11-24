@@ -7,12 +7,14 @@ export function HoverDeck({
   userId,
   role,
   hidden,
+  raised = false,
 }: {
   note: Note | null;
   edges: number;
   userId: string;
   role: string;
   hidden: boolean;
+  raised?: boolean;
 }) {
   const [shown, setShown] = useState<Note | null>(null);
   useEffect(() => {
@@ -26,7 +28,7 @@ export function HoverDeck({
   const sealed = shown && !canReadNote(shown, userId, role);
   return (
     <aside
-      className={`hover-deck ${hidden ? "hidden" : ""} ${shown && !hidden ? "visible" : ""}`}
+      className={`hover-deck ${raised ? "raised" : ""} ${hidden ? "hidden" : ""} ${shown && !hidden ? "visible" : ""}`}
       aria-hidden="true"
     >
       {shown && (

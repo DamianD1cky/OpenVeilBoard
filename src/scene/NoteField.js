@@ -91,7 +91,7 @@ export class NoteField {
     const active = notes.filter((n) => !n.archivedAt),
       ids = new Set(active.map((n) => n.id));
     for (const [id, card] of this.cards)
-      if (!ids.has(id) && !card.archiving) {
+      if (!ids.has(id) && !card.archiving && !card.burningAway) {
         card.dispose();
         this.cards.delete(id);
       }
@@ -111,6 +111,18 @@ export class NoteField {
         }
       } else card.update(note);
     }
+  }
+  burnAndRemove(id, done) {
+    const card = this.cards.get(id);
+    if (!card) {
+      done?.();
+      return;
+    }
+    card.burnAway(() => {
+      card.dispose();
+      this.cards.delete(id);
+      done?.();
+    });
   }
   setSwept(swept) {
     if (this.swept === swept) return;
@@ -217,7 +229,7 @@ export class NoteField {
     this.hovered = null;
     this.ctx.clock?.setHover?.(false);
     this.ctx.counterObject.well?.highlight(false);
-    this.ctx.dice?.clear();
+    this.ctx.dice?.tidyToCorner();
     this.downState = {
       card,
       x: e.clientX,

@@ -1,36 +1,189 @@
 import {
   BufferGeometry,
+  CanvasTexture,
   Float32BufferAttribute,
   Group,
   Mesh,
   MeshStandardMaterial,
-  CatmullRomCurve3,
+  PlaneGeometry,
+  SRGBColorSpace,
   Vector3,
 } from "../engine/index.js";
-import { createRope, stepRope, ROPE_POINTS } from "../features/rope/labRope.js";
-import { benchSurface } from "../features/rope/labBenchLayout.js";
-import { SurfaceStamp } from "./SurfaceClock3D.js";
 import { visibleEdges } from "../domain/geometry.js";
-function tubeGeometry(count) {
+
+const STRING_SEGMENTS = 10;
+const RADIAL_SEGMENTS = 6;
+
+const STYLE_CONFIG = {
+  rope: { radius: 0.0029, roughness: 0.92, metalness: 0.0, twist: 48.0 },
+  twine: { radius: 0.0034, roughness: 0.96, metalness: 0.0, twist: 62.0 },
+  gold: { radius: 0.0024, roughness: 0.32, metalness: 0.72, twist: 38.0 },
+  muted: { radius: 0.0026, roughness: 0.94, metalness: 0.0, twist: 42.0 },
+};
+
+function createTubeGeometry(segments = STRING_SEGMENTS) {
+  const verts = (segments + 1) * (RADIAL_SEGMENTS + 1);
   const geometry = new BufferGeometry();
   geometry.setAttribute(
     "position",
-    new Float32BufferAttribute(new Float32Array((count + 1) * 7 * 3), 3),
+    new Float32BufferAttribute(new Float32Array(verts * 3), 3),
   );
   geometry.setAttribute(
     "normal",
-    new Float32BufferAttribute(new Float32Array((count + 1) * 7 * 3), 3),
+    new Float32BufferAttribute(new Float32Array(verts * 3), 3),
   );
+  const uvs = new Float32Array(verts * 2);
+  for (let i = 0; i <= segments; i++) {
+    for (let j = 0; j <= RADIAL_SEGMENTS; j++) {
+      const idx = (i * (RADIAL_SEGMENTS + 1) + j) * 2;
+      uvs[idx] = j / RADIAL_SEGMENTS;
+      uvs[idx + 1] = i / segments;
+    }
+  }
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   const indices = [];
-  for (let i = 0; i < count; i++)
-    for (let j = 0; j < 6; j++) {
-      const a = i * 7 + j,
-        b = a + 7;
+  const ring = RADIAL_SEGMENTS + 1;
+  for (let i = 0; i < segments; i++) {
+    for (let j = 0; j < RADIAL_SEGMENTS; j++) {
+      const a = i * ring + j;
+      const b = a + ring;
       indices.push(a, b, a + 1, b, b + 1, a + 1);
     }
+  }
   geometry.setIndex(indices);
   return geometry;
 }
+
+let sharedCollarGeometry = null;
+function getCollarGeometry() {
+  if (sharedCollarGeometry) return sharedCollarGeometry;
+  const majorR = 0.0135;
+  const minorR = 0.0033;
+  const tubular = 14;
+  const radial = 6;
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const indices = [];
+  for (let i = 0; i <= tubular; i++) {
+    const u = (i / tubular) * Math.PI * 2;
+    const cu = Math.cos(u);
+    const su = Math.sin(u);
+    for (let j = 0; j <= radial; j++) {
+      const v = (j / radial) * Math.PI * 2;
+      const cv = Math.cos(v);
+      const sv = Math.sin(v);
+      const r = majorR + minorR * cv;
+      positions.push(r * cu, minorR * sv, r * su);
+      normals.push(cv * cu, sv, cv * su);
+      uvs.push(i / tubular, j / radial);
+    }
+  }
+  const stride = radial + 1;
+  for (let i = 0; i < tubular; i++) {
+    for (let j = 0; j < radial; j++) {
+      const a = i * stride + j;
+      const b = a + stride;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geo.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+  geo.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeBoundingSphere();
+  sharedCollarGeometry = geo;
+  return geo;
+}
+
+function createStringMaterial(edge) {
+  const cfg = STYLE_CONFIG[edge.style] ?? STYLE_CONFIG.rope;
+  const material = new MeshStandardMaterial({
+    color: edge.color || "#b83227",
+    roughness: cfg.roughness,
+    metalness: cfg.metalness,
+    transparent: true,
+    opacity: 1,
+  });
+  material.hooks = {
+    key: `clue-string:${edge.style || "rope"}`,
+    color: `
+  {
+    let braid = sin((uv.y * ${(cfg.twist * 6.28318).toFixed(1)} + uv.x * 12.56636));
+    let strandShade = 0.84 + 0.16 * braid;
+    diffuseColor = vec4f(diffuseColor.rgb * strandShade, diffuseColor.a);
+  }
+`,
+  };
+  return material;
+}
+
+class ClueLineTag {
+  constructor(text) {
+    this.text = text;
+    this.width = Math.min(0.46, Math.max(0.11, 0.068 + text.length * 0.025));
+    this.height = 0.044;
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = 512;
+    this.canvas.height = Math.max(64, Math.round((512 * this.height) / this.width));
+    this.texture = new CanvasTexture(this.canvas);
+    this.texture.colorSpace = SRGBColorSpace;
+    this.material = new MeshStandardMaterial({
+      map: this.texture,
+      roughness: 0.88,
+      metalness: 0,
+      transparent: true,
+    });
+    this.object = new Mesh(
+      new PlaneGeometry(this.width, this.height),
+      this.material,
+    );
+    this.object.rotation.x = -Math.PI / 2;
+    this.object.castShadow = true;
+    this.object.receiveShadow = true;
+    this.object.renderOrder = 4;
+    this.draw(text);
+  }
+
+  draw(text) {
+    const ctx = this.canvas.getContext("2d", { colorSpace: "srgb" });
+    const { width, height } = this.canvas;
+    ctx.clearRect(0, 0, width, height);
+    // Warm kraft evidence slip
+    ctx.fillStyle = "#efe5cf";
+    ctx.fillRect(4, 4, width - 8, height - 8);
+    ctx.strokeStyle = "rgba(92, 74, 52, 0.42)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(5.5, 5.5, width - 11, height - 11);
+    // Small twine-tie holes at ends
+    ctx.fillStyle = "rgba(80, 62, 42, 0.35)";
+    ctx.beginPath();
+    ctx.arc(18, height / 2, 4, 0, Math.PI * 2);
+    ctx.arc(width - 18, height / 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Crisp dark ink label
+    ctx.fillStyle = "#332a1e";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    let size = Math.round(height * 0.56);
+    ctx.font = `600 ${size}px "PingFang SC", "Noto Sans CJK SC", ui-monospace, sans-serif`;
+    while (ctx.measureText(text).width > width * 0.78 && size > 14) {
+      size -= 2;
+      ctx.font = `600 ${size}px "PingFang SC", "Noto Sans CJK SC", ui-monospace, sans-serif`;
+    }
+    ctx.fillText(text, width / 2, height / 2 + 1);
+    this.texture.needsUpdate = true;
+  }
+
+  dispose() {
+    this.texture.dispose();
+    this.material.dispose();
+    this.object.geometry.dispose();
+    this.object.removeFromParent();
+  }
+}
+
 export class RopeLinkLayer {
   constructor(ctx, field) {
     this.ctx = ctx;
@@ -44,7 +197,15 @@ export class RopeLinkLayer {
       -0.4,
     );
     this.stats = { awake: 0, uploads: 0, endpointSamples: 0 };
+    this._tmpA = new Vector3();
+    this._tmpB = new Vector3();
+    this._tmpP = new Vector3();
+    this._tmpT = new Vector3();
+    this._tmpR = new Vector3();
+    this._tmpN = new Vector3();
+    this._up = new Vector3(0, 1, 0);
   }
+
   sync(notes, edges) {
     this.notes = notes;
     const active = visibleEdges(notes, edges),
@@ -60,37 +221,26 @@ export class RopeLinkLayer {
         const a = this.field.cards.get(edge.fromNoteId)?.anchor(),
           b = this.field.cards.get(edge.toNoteId)?.anchor();
         if (!a || !b) continue;
-        const surface = this.surface();
-        const rope = createRope(
-          [
-            [a.x, a.z],
-            [(a.x + b.x) / 2 + 0.03, (a.z + b.z) / 2 + 0.05],
-            [b.x, b.z],
-          ],
-          surface,
-          0.005,
-        );
-        rope.plugged = a;
-        rope.grabbed = -1;
-        const mesh = new Mesh(
-          tubeGeometry(active.length > 40 ? 12 : 26),
-          new MeshStandardMaterial({
-            color: edge.color,
-            roughness: 0.95,
-            transparent: true,
-          }),
-        );
+        const material = createStringMaterial(edge);
+        const mesh = new Mesh(createTubeGeometry(STRING_SEGMENTS), material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        this.object.add(mesh);
+        const collarA = new Mesh(getCollarGeometry(), material);
+        const collarB = new Mesh(getCollarGeometry(), material);
+        collarA.castShadow = true;
+        collarB.castShadow = true;
+        this.object.add(mesh, collarA, collarB);
         link = {
-          rope,
           mesh,
+          collarA,
+          collarB,
           edge,
-          lastA: new Vector3(100, 100, 100),
-          lastB: new Vector3(),
+          styleKey: edge.style || "rope",
+          lastA: new Vector3(1e4, 1e4, 1e4),
+          lastB: new Vector3(1e4, 1e4, 1e4),
+          pluckAmp: 0.0048,
+          pluckPhase: 0,
           still: 0,
-          points: Array.from({ length: ROPE_POINTS }, () => new Vector3()),
         };
         this.links.set(edge.id, link);
         for (const id of [edge.fromNoteId, edge.toNoteId]) {
@@ -99,21 +249,23 @@ export class RopeLinkLayer {
         }
         this.wake(link);
       }
+      const nextStyle = edge.style || "rope";
+      if (nextStyle !== link.styleKey) {
+        const nextMat = createStringMaterial(edge);
+        link.mesh.material.dispose();
+        link.mesh.material = nextMat;
+        link.collarA.material = nextMat;
+        link.collarB.material = nextMat;
+        link.styleKey = nextStyle;
+      } else {
+        link.mesh.material.color.set(edge.color || "#b83227");
+      }
       link.edge = edge;
-      link.mesh.material.color.set(edge.color);
       if (edge.label !== link.labelText) {
         link.label?.dispose();
         link.labelText = edge.label;
-        link.label = edge.label
-          ? new SurfaceStamp(
-              this.ctx,
-              Math.min(0.48, 0.08 + edge.label.length * 0.028),
-              0.05,
-              true,
-            )
-          : null;
+        link.label = edge.label ? new ClueLineTag(edge.label) : null;
         if (link.label) {
-          link.label.draw(edge.label);
           this.object.add(link.label.object);
           this.wake(link);
         }
@@ -121,35 +273,37 @@ export class RopeLinkLayer {
     }
     this.highlight(this.highlighted);
   }
-  surface() {
-    const s = benchSurface(this.ctx.counter.get().layout);
-    s.boxes = [...this.field.cards.values()].map((c) => ({
-      x: c.object.position.x,
-      z: c.object.position.z,
-      cos: Math.cos(c.object.rotation.y),
-      sin: Math.sin(c.object.rotation.y),
-      halfWidth: c.width / 2,
-      halfDepth: c.height / 2,
-      top: c.object.position.y + 0.008,
-    }));
-    return s;
-  }
+
   setVisible(visible) {
     this.object.visible = visible;
     if (visible) {
       for (const link of this.links.values()) this.wake(link);
     }
   }
+
   highlight(id) {
     this.highlighted = id;
     this.highlightedEdge = null;
     this.applyHighlight();
   }
+
   highlightEdge(edgeId) {
     if (this.highlightedEdge === edgeId) return;
+    const prev = this.highlightedEdge;
     this.highlightedEdge = edgeId;
     this.applyHighlight();
+    if (edgeId && edgeId !== prev) {
+      this.pluck(edgeId, 0.0032);
+    }
   }
+
+  pluck(edgeId, amp = 0.005) {
+    const link = this.links.get(edgeId);
+    if (!link) return;
+    link.pluckAmp = Math.max(link.pluckAmp, amp);
+    this.wake(link);
+  }
+
   applyHighlight() {
     for (const link of this.links.values()) {
       const active = this.highlightedEdge
@@ -157,17 +311,19 @@ export class RopeLinkLayer {
         : !this.highlighted ||
           link.edge.fromNoteId === this.highlighted ||
           link.edge.toNoteId === this.highlighted;
-      link.mesh.material.opacity = active ? 1 : 0.25;
+      link.mesh.material.opacity = active ? 1 : 0.24;
+      if (link.label) link.label.material.opacity = active ? 1 : 0.35;
     }
   }
+
   at(point) {
     if (!point) return null;
     let best = null;
-    let bestDistSq = 0.048 * 0.048;
+    let bestDistSq = 0.044 * 0.044;
     for (const link of this.links.values()) {
       if (link.label) {
         const lp = link.label.object.position;
-        const halfW = (link.label.width ?? 0.24) * 0.55;
+        const halfW = (link.label.width ?? 0.24) * 0.58;
         if (
           Math.abs(point.x - lp.x) <= halfW &&
           Math.abs(point.z - lp.z) <= 0.045
@@ -175,159 +331,200 @@ export class RopeLinkLayer {
           return link.edge;
         }
       }
-      const pos = link.rope.position;
-      for (let i = 0; i < ROPE_POINTS - 1; i++) {
-        const ax = pos[i * 3],
-          az = pos[i * 3 + 2],
-          bx = pos[(i + 1) * 3],
-          bz = pos[(i + 1) * 3 + 2];
-        const dx = bx - ax,
-          dz = bz - az;
-        const lenSq = dx * dx + dz * dz;
-        const t =
-          lenSq > 1e-8
-            ? Math.max(
-                0,
-                Math.min(1, ((point.x - ax) * dx + (point.z - az) * dz) / lenSq),
-              )
-            : 0;
-        const px = ax + dx * t - point.x,
-          pz = az + dz * t - point.z;
-        const dSq = px * px + pz * pz;
-        if (dSq < bestDistSq) {
-          bestDistSq = dSq;
-          best = link.edge;
-        }
+      const a = link.lastA;
+      const b = link.lastB;
+      if (a.x > 1e3) continue;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const lenSq = dx * dx + dz * dz;
+      const t =
+        lenSq > 1e-8
+          ? Math.max(
+              0,
+              Math.min(1, ((point.x - a.x) * dx + (point.z - a.z) * dz) / lenSq),
+            )
+          : 0;
+      const px = a.x + dx * t - point.x;
+      const pz = a.z + dz * t - point.z;
+      const dSq = px * px + pz * pz;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        best = link.edge;
       }
     }
     return best;
   }
+
   wake(link) {
     link.still = 0;
     this.active.add(link);
     this.stats.awake = this.active.size;
   }
+
   wakeNote(id) {
     for (const link of this.byNote.get(id) ?? []) this.wake(link);
   }
+
   beginPreview(noteId) {
     this.clearPreview();
     const a = this.field.cards.get(noteId)?.anchor();
     if (!a) return;
     const end = a.clone().add(new Vector3(0.12, 0, 0.04));
-    const rope = createRope(
-      [
-        [a.x, a.z],
-        [end.x, end.z],
-      ],
-      this.surface(),
-      0.005,
-    );
-    const mesh = new Mesh(
-      tubeGeometry(26),
-      new MeshStandardMaterial({ color: "#b83227", roughness: 0.95 }),
-    );
+    const material = createStringMaterial({ color: "#b83227", style: "rope" });
+    const mesh = new Mesh(createTubeGeometry(STRING_SEGMENTS), material);
     mesh.castShadow = true;
-    this.object.add(mesh);
+    const collarA = new Mesh(getCollarGeometry(), material);
+    collarA.castShadow = true;
+    this.object.add(mesh, collarA);
     this.preview = {
-      rope,
       mesh,
-      edge: { fromNoteId: noteId },
+      collarA,
+      collarB: null,
+      edge: { fromNoteId: noteId, style: "rope", color: "#b83227" },
       end,
-      lastA: new Vector3(100, 100, 100),
-      lastB: new Vector3(),
+      lastA: new Vector3(1e4, 1e4, 1e4),
+      lastB: new Vector3(1e4, 1e4, 1e4),
+      pluckAmp: 0,
+      pluckPhase: 0,
       still: 0,
-      points: Array.from({ length: ROPE_POINTS }, () => new Vector3()),
     };
     this.wake(this.preview);
   }
+
   movePreview(point) {
     if (this.preview) {
       this.preview.end.set(
         point.x,
-        this.ctx.counter.get().floorY + 0.04,
+        this.ctx.counter.get().floorY + 0.042,
         point.z,
       );
       this.wake(this.preview);
     }
   }
+
   clearPreview() {
     if (this.preview) {
       this.destroy(this.preview);
       this.preview = null;
     }
   }
+
   frame(dt) {
     if (!this.active.size) return;
-    const surface = this.surface();
+    const stepDt = dt || 1 / 60;
     for (const link of this.active) {
       this.stats.endpointSamples++;
-      const a = this.field.cards.get(link.edge.fromNoteId)?.anchor(),
-        b = link.end ?? this.field.cards.get(link.edge.toNoteId)?.anchor();
+      const a = this.field.cards.get(link.edge.fromNoteId)?.anchor();
+      const b = link.end ?? this.field.cards.get(link.edge.toNoteId)?.anchor();
       if (!a || !b) {
         this.active.delete(link);
         continue;
       }
-      const changed =
-        a.distanceToSquared(link.lastA) > 1e-8 ||
-        b.distanceToSquared(link.lastB) > 1e-8;
+      const moveA = a.distanceTo(link.lastA);
+      const moveB = b.distanceTo(link.lastB);
+      const changed = moveA > 1e-4 || moveB > 1e-4;
       if (changed) {
+        if (link.lastA.x < 1e3) {
+          const speed = (moveA + moveB) / Math.max(stepDt, 1 / 120);
+          link.pluckAmp = Math.min(0.0085, Math.max(link.pluckAmp, speed * 0.003));
+        }
         link.lastA.copy(a);
         link.lastB.copy(b);
-        link.rope.rest.fill((a.distanceTo(b) * 1.12) / (ROPE_POINTS - 1));
       }
-      link.rope.plugged = a;
-      const offset = (ROPE_POINTS - 1) * 3;
-      link.rope.position.set([b.x, b.y, b.z], offset);
-      link.rope.previous.set([b.x, b.y, b.z], offset);
-      const movement = stepRope(link.rope, surface, dt || 1 / 60);
-      link.still = !changed && movement < 0.001 ? link.still + dt : 0;
-      if (link.still > 0.8) this.active.delete(link);
-      this.write(link);
+      if (link.pluckAmp > 0.00008) {
+        link.pluckPhase += stepDt * 22 * Math.PI * 2;
+        link.pluckAmp *= Math.exp(-10.5 * stepDt);
+      } else {
+        link.pluckAmp = 0;
+      }
+      this.write(link, a, b);
+      link.still = !changed && link.pluckAmp === 0 ? link.still + stepDt : 0;
+      if (link.still > 0.12) this.active.delete(link);
     }
     this.stats.awake = this.active.size;
   }
-  write(link) {
-    const { rope, mesh, points } = link;
-    points.forEach((p, i) => p.fromArray(rope.position, i * 3));
-    const curve = new CatmullRomCurve3(points),
-      geometry = mesh.geometry;
-    const pos = geometry.attributes.position,
-      norm = geometry.attributes.normal,
-      count = pos.count / 7 - 1;
-    const p = new Vector3(),
-      tangent = new Vector3(),
-      right = new Vector3(),
-      up = new Vector3(0, 1, 0),
-      normal = new Vector3();
-    for (let i = 0; i <= count; i++) {
-      curve.getPoint(i / count, p);
-      curve.getTangent(i / count, tangent);
-      right.crossVectors(tangent, up).normalize();
+
+  write(link, a, b) {
+    const cfg = STYLE_CONFIG[link.edge.style] ?? STYLE_CONFIG.rope;
+    const radius = cfg.radius;
+    const geometry = link.mesh.geometry;
+    const pos = geometry.attributes.position;
+    const norm = geometry.attributes.normal;
+    const ring = RADIAL_SEGMENTS + 1;
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    const dist = Math.hypot(dx, dy, dz);
+    // Razor-taut detective clue string: minimal natural tension sag
+    const sag = Math.min(0.0024, dist * 0.003);
+    const vib = link.pluckAmp * Math.sin(link.pluckPhase);
+    const horizLen = Math.hypot(dx, dz) || 1;
+    const perpX = -dz / horizLen;
+    const perpZ = dx / horizLen;
+
+    const p = this._tmpP;
+    const tangent = this._tmpT;
+    const right = this._tmpR;
+    const normal = this._tmpN;
+    const up = this._up;
+
+    for (let i = 0; i <= STRING_SEGMENTS; i++) {
+      const t = i / STRING_SEGMENTS;
+      const arch = 4 * t * (1 - t);
+      const sway = Math.sin(t * Math.PI) * vib;
+      p.set(
+        a.x + dx * t + perpX * sway,
+        a.y + dy * t - sag * arch,
+        a.z + dz * t + perpZ * sway,
+      );
+      const dArch = 4 * (1 - 2 * t);
+      const dSway = Math.PI * Math.cos(t * Math.PI) * vib;
+      tangent
+        .set(dx + perpX * dSway, dy - sag * dArch, dz + perpZ * dSway)
+        .normalize();
+      right.crossVectors(tangent, up);
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      else right.normalize();
       normal.crossVectors(right, tangent).normalize();
-      for (let j = 0; j <= 6; j++) {
-        const angle = (j * Math.PI) / 3,
-          nx = right.x * Math.cos(angle) + normal.x * Math.sin(angle),
-          ny = right.y * Math.cos(angle) + normal.y * Math.sin(angle),
-          nz = right.z * Math.cos(angle) + normal.z * Math.sin(angle);
-        pos.setXYZ(
-          i * 7 + j,
-          p.x + nx * rope.radius,
-          p.y + ny * rope.radius,
-          p.z + nz * rope.radius,
-        );
-        norm.setXYZ(i * 7 + j, nx, ny, nz);
+
+      for (let j = 0; j <= RADIAL_SEGMENTS; j++) {
+        const angle = (j / RADIAL_SEGMENTS) * Math.PI * 2;
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        const nx = right.x * c + normal.x * s;
+        const ny = right.y * c + normal.y * s;
+        const nz = right.z * c + normal.z * s;
+        const idx = i * ring + j;
+        pos.setXYZ(idx, p.x + nx * radius, p.y + ny * radius, p.z + nz * radius);
+        norm.setXYZ(idx, nx, ny, nz);
       }
     }
     pos.needsUpdate = true;
     norm.needsUpdate = true;
     geometry.computeBoundingSphere();
     this.stats.uploads++;
+
+    if (link.collarA) {
+      link.collarA.position.copy(a);
+    }
+    if (link.collarB) {
+      link.collarB.position.copy(b);
+    }
+
     if (link.label) {
-      const middle = curve.getPoint(0.5);
-      link.label.object.position.set(middle.x, middle.y + 0.012, middle.z);
+      const midX = (a.x + b.x) * 0.5 + perpX * vib;
+      const midY = (a.y + b.y) * 0.5 - sag + 0.0055;
+      const midZ = (a.z + b.z) * 0.5 + perpZ * vib;
+      link.label.object.position.set(midX, midY, midZ);
+      // Align evidence slip along string direction, keeping Chinese text always upright
+      let angle = -Math.atan2(dz, dx);
+      if (angle > Math.PI / 2) angle -= Math.PI;
+      if (angle < -Math.PI / 2) angle += Math.PI;
+      link.label.object.rotation.set(-Math.PI / 2, 0, angle);
     }
   }
+
   destroy(link) {
     this.active.delete(link);
     this.stats.awake = this.active.size;
@@ -339,8 +536,11 @@ export class RopeLinkLayer {
     link.mesh.geometry.dispose();
     link.mesh.material.dispose();
     link.mesh.removeFromParent();
+    link.collarA?.removeFromParent();
+    link.collarB?.removeFromParent();
     link.label?.dispose();
   }
+
   dispose() {
     this.off();
     this.clearPreview();

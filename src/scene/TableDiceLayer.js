@@ -12,6 +12,7 @@ import { buildDieGeometry } from "../features/dice/proceduralGeometry.ts";
 import { getDieShape } from "../features/dice/diceShapes.ts";
 import { gsap, whenMotion } from "../shared/motion.js";
 import { panForClientX, playSound } from "../features/audio/audioEngine.js";
+
 const materialPresets = {
   ivory: { color: "#eee3cb", ink: "#322a1f", metalness: 0.04, roughness: 0.35 },
   obsidian: {
@@ -23,6 +24,21 @@ const materialPresets = {
   brass: { color: "#af8742", ink: "#282418", metalness: 0.78, roughness: 0.3 },
   jade: { color: "#365c4d", ink: "#f0e1b9", metalness: 0.08, roughness: 0.26 },
 };
+
+const UP = new Vector3(0, 1, 0);
+
+function releaseDie(d) {
+  gsap.killTweensOf(d.group.position);
+  gsap.killTweensOf(d.group.scale);
+  gsap.killTweensOf(d.group.quaternion);
+  if (d.tweenObj) gsap.killTweensOf(d.tweenObj);
+  d.geometry.body.dispose();
+  d.geometry.marks.dispose();
+  d.bodyMaterial.dispose();
+  d.marksMaterial.dispose();
+  d.group.removeFromParent();
+}
+
 export class TableDiceLayer {
   constructor(ctx, field, onSettled) {
     this.ctx = ctx;
@@ -30,14 +46,32 @@ export class TableDiceLayer {
     this.onSettled = onSettled;
     this.object = new Group();
     this.dice = [];
+    this.exiting = new Set();
+    this.state = "idle"; // "idle" | "rolling" | "settled" | "docked"
+    this.swept = false;
     this.off = ctx.app.onFrame((_, dt) => this.frame(dt), -0.3);
-    this.stats = { stepping: false, bodies: 0 };
+    this.offCounter = ctx.counter.subscribe(() => {
+      if (this.state === "docked" && !this.swept && this.dice.length) {
+        this.layoutDocked(true);
+      }
+    });
+    this.stats = { stepping: false, bodies: 0, state: "idle" };
   }
+
+  setState(next) {
+    this.state = next;
+    this.stats.state = next;
+    this.ctx.onDiceState?.(next);
+  }
+
   throw(roll, preset = "ivory") {
     if (!roll.result || roll.id === this.lastId) return;
-    this.clear(true);
+    if (this.dice.length) {
+      this.sweepOut(false);
+    }
     this.lastId = roll.id;
     this.roll = roll;
+    this.swept = false;
     const { layout, floorY, zone } = this.ctx.counter.get();
     this.world = new CANNON.World({
       gravity: new CANNON.Vec3(0, -9.81, 0),
@@ -163,7 +197,13 @@ export class TableDiceLayer {
         bodyMaterial,
         marksMaterial,
         marksTexture,
+        baseScale: scale,
+        restY: floorY + scale * 0.8,
         randomYaw: random() * 6.28,
+        readQuaternion: new Quaternion(),
+        settledPos: new Vector3(),
+        dockPos: new Vector3(),
+        dockScale: scale * 0.76,
       };
       this.dice.push(die);
       body.addEventListener("collide", (event) => {
@@ -187,9 +227,13 @@ export class TableDiceLayer {
     this.stats.stepping = this.dice.length > 0;
     if (!this.dice.length) {
       this.settled = true;
+      this.setState("idle");
       this.onSettled(roll);
+    } else {
+      this.setState("rolling");
     }
   }
+
   frame(dt) {
     if (!this.world || this.settled || !this.dice.length) return;
     this.elapsed += Math.min(dt, 0.05);
@@ -215,10 +259,13 @@ export class TableDiceLayer {
     ) {
       this.settled = true;
       this.stats.stepping = false;
+      this.world = null;
       for (const die of this.dice) {
         die.body.velocity.setZero();
         die.body.angularVelocity.setZero();
         die.body.sleep();
+        die.restY = die.group.position.y;
+        die.settledPos.copy(die.group.position);
         const value =
           die.result.sides === "F"
             ? die.result.value < 0
@@ -229,18 +276,12 @@ export class TableDiceLayer {
             : die.result.value;
         const face =
           die.shape.faces.find((f) => f.value === value) ?? die.shape.faces[0];
-        const q = new Quaternion().setFromUnitVectors(
-          face.readNormal,
-          new Vector3(0, 1, 0),
-        );
-        q.premultiply(
-          new Quaternion().setFromAxisAngle(
-            new Vector3(0, 1, 0),
-            die.randomYaw,
-          ),
-        );
+        const q = new Quaternion().setFromUnitVectors(face.readNormal, UP);
+        q.premultiply(new Quaternion().setFromAxisAngle(UP, die.randomYaw));
+        die.readQuaternion.copy(q);
         const from = die.group.quaternion.clone(),
           progress = { t: 0 };
+        die.tweenObj = progress;
         gsap.to(progress, {
           t: 1,
           duration: whenMotion(0.3),
@@ -248,46 +289,294 @@ export class TableDiceLayer {
             die.group.quaternion.slerpQuaternions(from, q, progress.t),
         });
       }
+      this.setState("settled");
       this.resultTimer = setTimeout(() => this.onSettled(this.roll), 320);
-      this.clearTimer = setTimeout(() => this.clear(), 8320);
     }
   }
-  clear(immediate = false) {
+
+  /**
+   * Push settled tabletop dice smoothly into a neat row in the bottom-left
+   * corner of the recessed tray, preserving readable top faces.
+   */
+  tidyToCorner() {
+    if (this.state !== "settled" || !this.dice.length || this.swept) return;
     clearTimeout(this.resultTimer);
-    clearTimeout(this.clearTimer);
+    this.setState("docked");
+    this.layoutDocked(false);
+  }
+
+  layoutDocked(immediate = false) {
+    const { layout, floorY } = this.ctx.counter.get();
+    if (!layout || !this.dice.length) return;
+    const sorted = [...this.dice].sort(
+      (a, b) => a.group.position.x - b.group.position.x,
+    );
+    this.dice = sorted;
+    const baseScale = sorted[0].baseScale;
+    const dockScale = Math.min(baseScale * 0.76, layout.indentWidth * 0.044, 0.118);
+    const stepX = dockScale * 2.25;
+    const stepZ = dockScale * 2.25;
+    const maxCols = Math.max(
+      4,
+      Math.min(12, Math.floor((layout.indentWidth * 0.62) / stepX)),
+    );
+    const leftEdge = -layout.indentWidth / 2 + dockScale * 1.45 + 0.045;
+    const bottomEdge = layout.indentHeight / 2 - dockScale * 1.45 - 0.045;
+
+    sorted.forEach((die, i) => {
+      const col = i % maxCols;
+      const row = Math.floor(i / maxCols);
+      const tx = leftEdge + col * stepX;
+      const tz = bottomEdge - row * stepZ;
+      const heightRatio = dockScale / Math.max(die.baseScale, 0.001);
+      const ty = floorY + Math.max(0.015, (die.restY - floorY) * heightRatio);
+      die.dockPos.set(tx, ty, tz);
+      die.dockScale = dockScale;
+
+      gsap.killTweensOf(die.group.position);
+      gsap.killTweensOf(die.group.scale);
+      if (die.tweenObj) gsap.killTweensOf(die.tweenObj);
+
+      // Keep top face readable while aligning yaw cleanly along the bottom-left row
+      const faceVal =
+        die.result.sides === "F"
+          ? die.result.value < 0
+            ? 1
+            : die.result.value > 0
+              ? 5
+              : 3
+          : die.result.value;
+      const face =
+        die.shape.faces.find((f) => f.value === faceVal) ?? die.shape.faces[0];
+      const dockQuat = new Quaternion().setFromUnitVectors(face.readNormal, UP);
+      dockQuat.premultiply(
+        new Quaternion().setFromAxisAngle(UP, ((i % 3) - 1) * 0.08),
+      );
+      die.readQuaternion.copy(dockQuat);
+
+      if (immediate) {
+        die.group.position.set(tx, ty, tz);
+        die.group.scale.setScalar(dockScale);
+        die.group.quaternion.copy(dockQuat);
+        return;
+      }
+
+      const startPos = die.group.position.clone();
+      const startScale = die.group.scale.x;
+      const startQuat = die.group.quaternion.clone();
+      const travel = { t: 0 };
+      die.tweenObj = travel;
+      const delay = whenMotion(Math.min(0.28, i * 0.022));
+      const dur = whenMotion(0.46);
+      gsap.to(travel, {
+        t: 1,
+        duration: dur,
+        delay,
+        ease: "power2.out",
+        onStart: () => {
+          if (i < 6) {
+            playSound("polaroid.dock", {
+              volume: 0.16,
+              rate: 1.55 + (i % 4) * 0.08,
+              pan: -0.45,
+            });
+          }
+        },
+        onUpdate: () => {
+          const t = travel.t;
+          const lift = Math.sin(t * Math.PI) * 0.022;
+          die.group.position.set(
+            startPos.x + (tx - startPos.x) * t,
+            startPos.y + (ty - startPos.y) * t + lift,
+            startPos.z + (tz - startPos.z) * t,
+          );
+          die.group.scale.setScalar(startScale + (dockScale - startScale) * t);
+          die.group.quaternion.slerpQuaternions(startQuat, dockQuat, t);
+        },
+      });
+    });
+  }
+
+  /**
+   * Sweep dice temporarily off the left rim while viewing a note/archive route,
+   * then glide them back on return.
+   */
+  setSwept(swept) {
+    if (this.swept === swept) return;
+    this.swept = swept;
+    if (!this.dice.length || this.state === "rolling") return;
+    const { layout, floorY } = this.ctx.counter.get();
+    if (!layout) return;
+    const exitX = -layout.indentWidth * 0.5 - 0.45;
+    this.dice.forEach((die, i) => {
+      gsap.killTweensOf(die.group.position);
+      if (die.tweenObj) gsap.killTweensOf(die.tweenObj);
+      const target =
+        this.state === "docked" ? die.dockPos : die.settledPos;
+      gsap.to(die.group.position, {
+        x: swept ? exitX : target.x,
+        y: swept ? floorY + layout.indentDepth + die.group.scale.x * 1.2 : target.y,
+        z: target.z,
+        duration: whenMotion(swept ? 0.36 : 0.44),
+        delay: whenMotion(i * 0.015),
+        ease: swept ? "power3.in" : "power3.out",
+      });
+    });
+  }
+
+  /**
+   * Gather dice into the top CounterSlot shutter right before printing a roll note.
+   */
+  collectIntoSlot(onArrived) {
+    clearTimeout(this.resultTimer);
+    if (!this.dice.length) {
+      onArrived?.();
+      return;
+    }
+    const { slot, floorY } = this.ctx.counter.get();
+    if (!slot) {
+      this.sweepOut(false);
+      onArrived?.();
+      return;
+    }
+    this.ctx.counterObject.slotModule?.open();
+    const batch = this.dice;
+    this.dice = [];
+    this.world = null;
+    this.settled = true;
+    this.stats.stepping = false;
+    this.stats.bodies = 0;
+    this.setState("idle");
+
+    let fired = false;
+    const triggerArrival = () => {
+      if (fired) return;
+      fired = true;
+      onArrived?.();
+    };
+
+    batch.forEach((d, i) => {
+      this.exiting.add(d);
+      gsap.killTweensOf(d.group.position);
+      gsap.killTweensOf(d.group.scale);
+      if (d.tweenObj) gsap.killTweensOf(d.tweenObj);
+      const startPos = d.group.position.clone();
+      const startScale = d.group.scale.x;
+      const targetX = slot.x + ((i % 5) - 2) * 0.035;
+      const targetZ = slot.z;
+      const travel = { t: 0 };
+      d.tweenObj = travel;
+      gsap.to(travel, {
+        t: 1,
+        duration: whenMotion(0.34),
+        delay: whenMotion(Math.min(0.12, i * 0.014)),
+        ease: "power2.in",
+        onUpdate: () => {
+          const t = travel.t;
+          const arc = Math.sin(t * Math.PI) * 0.06;
+          d.group.position.set(
+            startPos.x + (targetX - startPos.x) * t,
+            startPos.y + (floorY - 0.015 - startPos.y) * t + arc,
+            startPos.z + (targetZ - startPos.z) * t,
+          );
+          d.group.scale.setScalar(startScale * (1 - t * 0.65));
+        },
+        onComplete: () => {
+          this.exiting.delete(d);
+          releaseDie(d);
+          if (i === batch.length - 1) triggerArrival();
+        },
+      });
+    });
+    // Safety fallback if motion is instant or interrupted
+    setTimeout(triggerArrival, 460);
+  }
+
+  /**
+   * Sweep existing dice smoothly over the left rim with physical roll rotation.
+   */
+  sweepOut(immediate = false) {
+    clearTimeout(this.resultTimer);
     this.settled = true;
     this.stats.stepping = false;
     const dice = this.dice;
     this.dice = [];
     this.world = null;
     this.stats.bodies = 0;
-    for (const d of dice) {
-      const release = () => {
-        d.geometry.body.dispose();
-        d.geometry.marks.dispose();
-        d.bodyMaterial.dispose();
-        d.marksMaterial.dispose();
-        d.group.removeFromParent();
-      };
+    this.setState("idle");
+    const { layout, floorY } = this.ctx.counter.get();
+    const exitX = layout ? -layout.indentWidth * 0.5 - 0.5 : -2.5;
+    const rimY = layout ? floorY + layout.indentDepth : floorY + 0.02;
+
+    const sorted = [...dice].sort(
+      (a, b) => a.group.position.x - b.group.position.x,
+    );
+    sorted.forEach((d, i) => {
       if (immediate) {
-        gsap.killTweensOf(d.group.scale);
-        release();
-      } else
-        gsap.to(d.group.scale, {
-          x: 0,
-          y: 0,
-          z: 0,
-          duration: whenMotion(0.22),
-          onComplete: release,
-        });
+        releaseDie(d);
+        return;
+      }
+      this.exiting.add(d);
+      gsap.killTweensOf(d.group.position);
+      gsap.killTweensOf(d.group.scale);
+      if (d.tweenObj) gsap.killTweensOf(d.tweenObj);
+
+      const startPos = d.group.position.clone();
+      const startQuat = d.group.quaternion.clone();
+      const targetY = rimY + d.group.scale.x * 1.15;
+      const targetZ = startPos.z + (i % 2 === 0 ? -0.05 : 0.05);
+      const dx = exitX - startPos.x;
+      const dz = targetZ - startPos.z;
+      const dist = Math.hypot(dx, dz);
+      const rollAxis = new Vector3(dz, 0, -dx).normalize();
+      if (rollAxis.lengthSq() < 0.001) rollAxis.set(0, 0, 1);
+      const totalAngle = dist / Math.max(d.group.scale.x * 0.7, 0.04);
+      const spin = new Quaternion();
+      const travel = { t: 0 };
+      d.tweenObj = travel;
+
+      gsap.to(travel, {
+        t: 1,
+        duration: whenMotion(0.36),
+        delay: whenMotion(Math.min(0.18, i * 0.016)),
+        ease: "power3.in",
+        onUpdate: () => {
+          const t = travel.t;
+          const liftCurve = Math.min(1, t * 2.4);
+          d.group.position.set(
+            startPos.x + dx * t,
+            startPos.y + (targetY - startPos.y) * liftCurve,
+            startPos.z + dz * t,
+          );
+          spin.setFromAxisAngle(rollAxis, totalAngle * t);
+          d.group.quaternion.copy(startQuat).premultiply(spin);
+        },
+        onComplete: () => {
+          this.exiting.delete(d);
+          releaseDie(d);
+        },
+      });
+    });
+  }
+
+  clear(immediate = false) {
+    if (immediate) {
+      this.sweepOut(true);
+      for (const d of this.exiting) releaseDie(d);
+      this.exiting.clear();
+    } else {
+      this.sweepOut(false);
     }
   }
+
   dispose() {
     this.off();
+    this.offCounter?.();
     this.clear(true);
     this.object.removeFromParent();
   }
 }
+
 const atlasCache = new Map();
 function atlas(color) {
   if (atlasCache.has(color)) return atlasCache.get(color);

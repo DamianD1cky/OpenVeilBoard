@@ -92,6 +92,10 @@ export class SurfaceClock3D {
     this.dirty = true;
     this.frame();
   }
+  refreshInk() {
+    this.dirty = true;
+    this.frame();
+  }
   frame() {
     const { layout, floorY } = this.ctx.counter.get();
     if (!layout) return;
@@ -108,9 +112,12 @@ export class SurfaceClock3D {
       const urgent =
         this.clock.mode === "countdown" &&
         campaignClockValue(this.clock) < 60_000;
+      const ink = this.ctx.surfaceInk;
+      const baseInk = ink?.stampInk ?? "#514b3e";
+      const hoverInk = ink?.stampHoverInk ?? "#2a241b";
       this.stamp.draw(
         clockText(this.clock),
-        urgent ? "#963f31" : this.hovered ? "#2a241b" : "#514b3e",
+        urgent ? (ink?.isDark ? "#f07c6a" : "#963f31") : this.hovered ? hoverInk : baseInk,
       );
     }
   }

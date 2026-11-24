@@ -2,12 +2,18 @@ import {
   CanvasTexture,
   SRGBColorSpace,
   NoColorSpace,
+  RepeatWrapping,
 } from "../../engine/index.js";
-import { paintPolaroidAging, paintPolaroidCrease } from "./polaroidAging.js";
+import {
+  paintPolaroidAging,
+  paintPolaroidCrease,
+  paintPhotoOverlay,
+} from "./polaroidAging.js";
 import { capabilityRegistry } from "../../domain/capabilityRegistry.ts";
 import { paperColor, darkPaper } from "../../domain/paperColors.js";
 import { paperAspect as cardAspect } from "../../domain/geometry.js";
 export { paperAspect as cardAspect } from "../../domain/geometry.js";
+
 export function wrapText(ctx, text, width, lines = 4) {
   if (lines <= 0) return [];
   const result = [];
@@ -26,95 +32,241 @@ export function wrapText(ctx, text, width, lines = 4) {
     result[lines - 1] = result[lines - 1].slice(0, -1) + "…";
   return result.slice(0, lines);
 }
-export function createNoteTexture(note, image = null) {
-  const width = 768,
-    height = Math.round(width / cardAspect(note.cardStyle));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+
+function hash(s) {
+  let h = 0;
+  for (const c of String(s ?? "note")) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
+  return h >>> 0;
+}
+
+function seededRand(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 1831565813) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function paintCardstockGrain(ctx, width, height, seed, dark) {
+  const rand = seededRand(seed ^ 0x9e3779b9);
+  ctx.save();
+  // Subtle woven cotton fiber streaks
+  for (let i = 0; i < 160; i++) {
+    const x = rand() * width;
+    const y = rand() * height;
+    const len = 10 + rand() * 34;
+    const horiz = rand() > 0.35;
+    const angle = horiz ? (rand() - 0.5) * 0.14 : Math.PI / 2 + (rand() - 0.5) * 0.14;
+    ctx.strokeStyle = dark
+      ? `rgba(255, 245, 224, ${0.015 + rand() * 0.028})`
+      : `rgba(74, 58, 38, ${0.018 + rand() * 0.032})`;
+    ctx.lineWidth = 0.8 + rand() * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+    ctx.stroke();
+  }
+  // Soft inner vignette so the cardstock isn't a flat digital fill
+  const vig = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.48,
+    Math.min(width, height) * 0.25,
+    width * 0.5,
+    height * 0.5,
+    Math.max(width, height) * 0.72,
+  );
+  vig.addColorStop(0, "rgba(0,0,0,0)");
+  vig.addColorStop(
+    1,
+    dark ? "rgba(0,0,0,0.22)" : "rgba(72, 54, 30, 0.11)",
+  );
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, width, height);
+
+  // Subtle physical cardstock bevel along the cut edges
+  ctx.strokeStyle = dark
+    ? "rgba(255, 244, 224, 0.12)"
+    : "rgba(255, 253, 246, 0.58)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(2, height - 2);
+  ctx.lineTo(2, 2);
+  ctx.lineTo(width - 2, 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = dark
+    ? "rgba(0, 0, 0, 0.45)"
+    : "rgba(56, 44, 28, 0.22)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(width - 2, 2);
+  ctx.lineTo(width - 2, height - 2);
+  ctx.lineTo(2, height - 2);
+  ctx.stroke();
+
+  // Subtle pin indentation shadow near top-center where pushpin presses paper
+  const pinAO = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.055,
+    2,
+    width * 0.5,
+    height * 0.055,
+    42,
+  );
+  pinAO.addColorStop(0, "rgba(26, 20, 14, 0.26)");
+  pinAO.addColorStop(0.45, "rgba(26, 20, 14, 0.08)");
+  pinAO.addColorStop(1, "rgba(26, 20, 14, 0)");
+  ctx.fillStyle = pinAO;
+  ctx.fillRect(width * 0.5 - 44, 0, 88, height * 0.12);
+
+  ctx.restore();
+}
+
+function drawNoteToCanvas(canvas, note, image = null) {
+  const width = canvas.width;
+  const height = canvas.height;
   const ctx = canvas.getContext("2d", { colorSpace: "srgb" });
-  const color =
-    note.cardStyle === "polaroid" ? "#f1ede2" : paperColor(note.color);
+  const seed = hash(note.id);
+  const isPolaroid = note.cardStyle === "polaroid";
+  const color = isPolaroid ? "#f2eee4" : paperColor(note.color);
   const dark = darkPaper(color);
+
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, width, height);
+
+  paintCardstockGrain(ctx, width, height, seed, dark);
   paintPolaroidAging(ctx, {
     width,
     height,
-    wear: 0.28,
-    seed: hash(note.id),
+    wear: isPolaroid ? 0.22 : 0.32,
+    seed,
     window: { x: 0, y: 0, w: 0, h: 0 },
   });
-  paintPolaroidCrease(ctx, { width, height, wear: 0.18, seed: hash(note.id) });
-  let top = 130;
+  paintPolaroidCrease(ctx, { width, height, wear: 0.22, seed });
+
+  let top = 128;
+
   if (note.cardStyle === "dossier") {
-    ctx.strokeStyle = "rgba(70,65,55,.15)";
+    // Classic index dossier header band + faint ruled lines
+    ctx.fillStyle = "rgba(145, 62, 46, 0.08)";
+    ctx.fillRect(36, 36, width - 72, 42);
+    ctx.strokeStyle = "rgba(145, 62, 46, 0.34)";
     ctx.lineWidth = 2;
-    for (let y = 200; y < height - 90; y += 65) {
+    ctx.beginPath();
+    ctx.moveTo(36, 78);
+    ctx.lineTo(width - 36, 78);
+    ctx.stroke();
+
+    ctx.strokeStyle = dark
+      ? "rgba(241, 229, 203, 0.12)"
+      : "rgba(68, 60, 48, 0.15)";
+    ctx.lineWidth = 1.6;
+    for (let y = 196; y < height - 92; y += 64) {
       ctx.beginPath();
-      ctx.moveTo(42, y);
-      ctx.lineTo(width - 42, y);
+      ctx.moveTo(44, y);
+      ctx.lineTo(width - 44, y);
       ctx.stroke();
     }
-    ctx.fillStyle = "#a04b3c";
-    ctx.font = "24px ui-monospace, monospace";
-    ctx.fillText(`档案 / ${note.id.slice(-6).toUpperCase()}`, 46, 53);
+    ctx.fillStyle = dark ? "#e59a86" : "#963f31";
+    ctx.font = '600 22px ui-monospace, "SF Mono", monospace';
+    ctx.fillText(`DOSSIER // ${String(note.id ?? "NEW").slice(-6).toUpperCase()}`, 48, 64);
+    top = 144;
   }
+
   if (note.cardStyle === "urgent") {
-    ctx.strokeStyle = "#a74634";
-    ctx.lineWidth = 12;
-    ctx.strokeRect(20, 20, width - 40, height - 40);
-    ctx.fillStyle = "#99432f";
-    ctx.font = "22px sans-serif";
-    ctx.fillText("重要", 46, 55);
+    ctx.strokeStyle = "rgba(167, 66, 46, 0.82)";
+    ctx.lineWidth = 10;
+    ctx.strokeRect(22, 22, width - 44, height - 44);
+    ctx.strokeStyle = "rgba(167, 66, 46, 0.32)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(34, 34, width - 68, height - 68);
+    ctx.fillStyle = "#9b3c2b";
+    ctx.font = '700 22px "PingFang SC", ui-monospace, sans-serif';
+    ctx.fillText("URGENT · 紧急线索", 48, 66);
+    top = 138;
   }
-  if (image) {
-    const h = note.cardStyle === "polaroid" ? height * 0.64 : height * 0.35;
-    const available = width - 80;
-    const scale = Math.max(available / image.width, h / image.height);
+
+  // Photo window (Polaroid authentic framing vs inline photo on other cards)
+  if (image || isPolaroid) {
+    const padX = isPolaroid ? Math.round(width * 0.068) : 44;
+    const padTop = isPolaroid ? Math.round(height * 0.062) : 64;
+    const availW = width - padX * 2;
+    const photoH = isPolaroid ? Math.round(height * 0.66) : Math.round(height * 0.36);
+
+    if (image) {
+      const scale = Math.max(availW / image.width, photoH / image.height);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padX, padTop, availW, photoH);
+      ctx.clip();
+      ctx.drawImage(
+        image,
+        padX + (availW - image.width * scale) / 2,
+        padTop + (photoH - image.height * scale) / 2,
+        image.width * scale,
+        image.height * scale,
+      );
+      // Warm darkroom film emulsion vignette & micro-dust overlay
+      const filmVig = ctx.createRadialGradient(
+        padX + availW / 2,
+        padTop + photoH / 2,
+        Math.min(availW, photoH) * 0.25,
+        padX + availW / 2,
+        padTop + photoH / 2,
+        Math.max(availW, photoH) * 0.72,
+      );
+      filmVig.addColorStop(0, "rgba(255, 246, 232, 0.04)");
+      filmVig.addColorStop(1, "rgba(16, 12, 8, 0.28)");
+      ctx.fillStyle = filmVig;
+      ctx.fillRect(padX, padTop, availW, photoH);
+      ctx.globalCompositeOperation = "soft-light";
+      paintPhotoOverlay(ctx, {
+        window: { x: padX, y: padTop, w: availW, h: photoH },
+        wear: 0.22,
+        seed,
+      });
+      ctx.restore();
+    } else {
+      // Polaroid darkroom unexposed emulsion bay
+      ctx.save();
+      const grad = ctx.createLinearGradient(padX, padTop, padX + availW, padTop + photoH);
+      grad.addColorStop(0, "#23201c");
+      grad.addColorStop(1, "#171512");
+      ctx.fillStyle = grad;
+      ctx.fillRect(padX, padTop, availW, photoH);
+      ctx.fillStyle = "rgba(232, 220, 200, 0.36)";
+      ctx.font = '500 24px "PingFang SC", "Noto Sans CJK SC", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("点击投射线索影像", width / 2, padTop + photoH / 2);
+      ctx.restore();
+    }
+    // Recessed lip border around photo window
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(40, 60, available, h);
-    ctx.clip();
-    ctx.drawImage(
-      image,
-      (width - image.width * scale) / 2,
-      60 + (h - image.height * scale) / 2,
-      image.width * scale,
-      image.height * scale,
-    );
-    ctx.restore();
-    top = 60 + h + 65;
-  } else if (note.cardStyle === "polaroid") {
-    const h = height * 0.56;
-    const available = width - 80;
-    ctx.save();
-    ctx.fillStyle = "rgba(38, 34, 28, 0.085)";
-    ctx.fillRect(40, 60, available, h);
-    ctx.strokeStyle = "rgba(64, 56, 44, 0.2)";
+    ctx.strokeStyle = "rgba(32, 24, 16, 0.28)";
     ctx.lineWidth = 3;
-    ctx.strokeRect(40, 60, available, h);
-    ctx.fillStyle = "rgba(82, 72, 58, 0.45)";
-    ctx.font = '500 28px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-    ctx.textAlign = "center";
-    ctx.fillText("点击添加影像", width / 2, 60 + h / 2 + 10);
+    ctx.strokeRect(padX + 1, padTop + 1, availW - 2, photoH - 2);
     ctx.restore();
-    top = 60 + h + 65;
+    top = padTop + photoH + (isPolaroid ? 58 : 56);
   }
+
   const isSealedStub =
     note.title === "机密便签" &&
     !note.body &&
-    note.capabilities.some(
+    (note.capabilities ?? []).some(
       (c) => c.type === "secret" && c.enabled && c.data?.scope !== "all",
     );
   if (isSealedStub) {
     ctx.save();
     ctx.translate(width / 2, height * 0.52);
-    ctx.rotate(-0.26);
-    ctx.strokeStyle = "rgba(154, 48, 36, 0.72)";
+    ctx.rotate(-0.24);
+    ctx.strokeStyle = "rgba(154, 48, 36, 0.78)";
     ctx.lineWidth = 8;
     ctx.strokeRect(-220, -64, 440, 128);
-    ctx.fillStyle = "rgba(154, 48, 36, 0.78)";
+    ctx.fillStyle = "rgba(154, 48, 36, 0.82)";
     ctx.font = '700 54px "PingFang SC", "Noto Sans CJK SC", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -123,68 +275,206 @@ export function createNoteTexture(note, image = null) {
     ctx.fillText("SEALED · RESTRICTED", 0, 38);
     ctx.restore();
   }
-  ctx.fillStyle = dark ? "#f1e5cb" : "#332d23";
-  ctx.font = '600 54px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-  const title = wrapText(ctx, note.title, width - 90, 2);
-  title.forEach((line, i) => ctx.fillText(line, 46, top + i * 64));
-  top += title.length * 64 + 24;
-  ctx.fillStyle = dark ? "#e2cfb1" : "#474033";
-  ctx.font = '36px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-  const maxLines = Math.max(
-    0,
-    Math.min(5, Math.floor((height - top - 115) / 62)),
-  );
-  wrapText(
-    ctx,
-    note.body.replace(/[#*`>]/g, ""),
-    width - 100,
-    maxLines,
-  ).forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
-  ctx.font = '27px "PingFang SC", sans-serif';
-  ctx.fillStyle = dark ? "#e2cfb1" : "#675b46";
-  const capabilities = note.capabilities.filter((c) => c.enabled);
+
+  // Ink absorption pass
+  ctx.save();
+  ctx.globalAlpha = 0.94;
+  ctx.fillStyle = dark ? "#f3e8d0" : "#2c251c";
+  if (isPolaroid) {
+    // Classic Polaroid handwritten/editorial bottom caption
+    ctx.font = '600 46px "Songti SC", "Noto Serif SC", Georgia, "PingFang SC", serif';
+    const titleLines = wrapText(ctx, note.title, width - 104, 1);
+    titleLines.forEach((line, i) => ctx.fillText(line, 52, top + i * 54));
+    if (note.body && !image) {
+      ctx.fillStyle = dark ? "#e2cfb1" : "#4e4536";
+      ctx.font = '30px "PingFang SC", "Noto Sans CJK SC", sans-serif';
+      wrapText(ctx, note.body.replace(/[#*`>]/g, ""), width - 104, 1).forEach(
+        (line) => ctx.fillText(line, 52, top + 44),
+      );
+    }
+  } else {
+    ctx.font = '700 52px "Songti SC", "Noto Serif SC", Georgia, "PingFang SC", serif';
+    const title = wrapText(ctx, note.title, width - 92, 2);
+    title.forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
+    top += title.length * 62 + 24;
+    ctx.fillStyle = dark ? "#e4d2b4" : "#443c30";
+    ctx.font = '34px "PingFang SC", "Noto Sans CJK SC", sans-serif';
+    const maxLines = Math.max(
+      0,
+      Math.min(5, Math.floor((height - top - 115) / 58)),
+    );
+    wrapText(
+      ctx,
+      String(note.body ?? "").replace(/[#*`>]/g, ""),
+      width - 98,
+      maxLines,
+    ).forEach((line, i) => ctx.fillText(line, 46, top + i * 58));
+  }
+  ctx.restore();
+
+  // Capability badges
+  ctx.font = '26px "PingFang SC", sans-serif';
+  ctx.fillStyle = dark ? "#e2cfb1" : "#655844";
+  const capabilities = (note.capabilities ?? []).filter((c) => c.enabled);
   const shown = capabilities.slice(0, capabilities.length > 3 ? 2 : 3);
   shown.forEach((cap, i) =>
     capabilityRegistry.get(cap.type)?.drawSurfaceBadge(ctx, cap.data, {
       x: 46 + i * 218,
-      y: height - 87,
+      y: height - 86,
       width: 206,
-      height: 50,
+      height: 48,
     }),
   );
   if (capabilities.length > 3)
-    ctx.fillText(`+${capabilities.length - 2}`, width - 100, height - 53);
+    ctx.fillText(`+${capabilities.length - 2}`, width - 98, height - 53);
+}
+
+export function createNoteTexture(note, image = null) {
+  const width = 768,
+    height = Math.round(width / cardAspect(note.cardStyle));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  drawNoteToCanvas(canvas, note, image);
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
+  texture.anisotropy = 8;
   texture.generateMipmaps = true;
   return texture;
 }
-function hash(s) {
-  let h = 0;
-  for (const c of s) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
-  return h >>> 0;
+
+/**
+ * @param {any} note
+ * @param {HTMLImageElement | null} [image]
+ * @returns {string}
+ */
+export function renderNotePreviewDataUrl(note, image = null) {
+  const width = 384;
+  const height = Math.round(width / cardAspect(note.cardStyle));
+  const full = document.createElement("canvas");
+  full.width = 768;
+  full.height = Math.round(768 / cardAspect(note.cardStyle));
+  drawNoteToCanvas(full, note, image);
+  const thumb = document.createElement("canvas");
+  thumb.width = width;
+  thumb.height = height;
+  const tctx = thumb.getContext("2d", { colorSpace: "srgb" });
+  tctx.drawImage(full, 0, 0, width, height);
+  return thumb.toDataURL("image/webp", 0.86);
 }
+
 const roughMaps = new Map();
 export function noteRoughnessMap(note, photo = false) {
   const key = `${note.cardStyle}:${photo}`;
   if (roughMaps.has(key)) return roughMaps.get(key);
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = Math.round(128 / cardAspect(note.cardStyle));
+  canvas.width = 192;
+  canvas.height = Math.round(192 / cardAspect(note.cardStyle));
   const ctx = canvas.getContext("2d", { colorSpace: "srgb" });
-  ctx.fillStyle = "#e4e4e4";
+  const isPolaroid = note.cardStyle === "polaroid";
+  // Satin-matte cardstock base with gentle organic variation
+  ctx.fillStyle = isPolaroid ? "#b8b8b8" : "#d4d4d4";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (photo) {
-    ctx.fillStyle = "#343434";
-    ctx.fillRect(
-      (40 / 768) * canvas.width,
-      (60 / (768 / cardAspect(note.cardStyle))) * canvas.height,
-      canvas.width * (688 / 768),
-      canvas.height * (note.cardStyle === "polaroid" ? 0.64 : 0.35),
-    );
+  const rand = seededRand(hash(key));
+  for (let i = 0; i < 90; i++) {
+    const shade = (isPolaroid ? 172 : 196) + Math.floor(rand() * 34);
+    ctx.fillStyle = `rgba(${shade},${shade},${shade},0.28)`;
+    ctx.beginPath();
+    ctx.arc(rand() * canvas.width, rand() * canvas.height, 4 + rand() * 14, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (photo || isPolaroid) {
+    // Glossy photo emulsion region
+    const padX = isPolaroid ? canvas.width * 0.068 : (44 / 768) * canvas.width;
+    const padTop = isPolaroid ? canvas.height * 0.062 : (64 / (768 / cardAspect(note.cardStyle))) * canvas.height;
+    const availW = canvas.width - padX * 2;
+    const photoH = canvas.height * (isPolaroid ? 0.66 : 0.36);
+    ctx.fillStyle = photo ? "#1c1c1c" : "#444444";
+    ctx.fillRect(padX, padTop, availW, photoH);
   }
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = NoColorSpace;
+  texture.anisotropy = 4;
   roughMaps.set(key, texture);
   return texture;
+}
+
+let cachedPaperNormal = null;
+/**
+ * Shared procedural tangent-space paper fiber micro-normal map.
+ * Gives every note realistic cotton-cardstock tooth under directional lighting.
+ */
+export function notePaperNormalMap() {
+  if (cachedPaperNormal) return cachedPaperNormal;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  const h = new Float32Array(size * size);
+  const rand = seededRand(0x517cc1b7);
+  // Tileable multi-scale fiber heightfield
+  for (let i = 0; i < size * size; i++) {
+    h[i] = (rand() - 0.5) * 0.45;
+  }
+  // Directional cotton fibers wrapped across tile borders
+  for (let k = 0; k < 220; k++) {
+    const x0 = Math.floor(rand() * size);
+    const y0 = Math.floor(rand() * size);
+    const len = 8 + Math.floor(rand() * 24);
+    const horiz = rand() > 0.45;
+    const amp = (rand() > 0.5 ? 1 : -1) * (0.25 + rand() * 0.35);
+    for (let s = 0; s < len; s++) {
+      const x = (x0 + (horiz ? s : 0)) & (size - 1);
+      const y = (y0 + (horiz ? 0 : s)) & (size - 1);
+      h[y * size + x] += amp;
+    }
+  }
+  // One box-blur pass to smooth pixel noise into soft paper grain
+  const blur = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1) & (size - 1);
+    const yp = (y + 1) & (size - 1);
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1) & (size - 1);
+      const xp = (x + 1) & (size - 1);
+      blur[y * size + x] =
+        (h[y * size + x] * 4 +
+          h[y * size + xm] +
+          h[y * size + xp] +
+          h[ym * size + x] +
+          h[yp * size + x]) /
+        8;
+    }
+  }
+  const strength = 1.65;
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1) & (size - 1);
+    const yp = (y + 1) & (size - 1);
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1) & (size - 1);
+      const xp = (x + 1) & (size - 1);
+      const dx = (blur[y * size + xp] - blur[y * size + xm]) * strength;
+      const dy = (blur[yp * size + x] - blur[ym * size + x]) * strength;
+      const invLen = 1 / Math.hypot(dx, dy, 1);
+      const nx = -dx * invLen;
+      const ny = -dy * invLen;
+      const nz = invLen;
+      const idx = (y * size + x) * 4;
+      img.data[idx] = Math.round((nx * 0.5 + 0.5) * 255);
+      img.data[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      img.data[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = NoColorSpace;
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  tex.repeat.set(2.5, 3.0);
+  tex.anisotropy = 4;
+  cachedPaperNormal = tex;
+  return tex;
 }

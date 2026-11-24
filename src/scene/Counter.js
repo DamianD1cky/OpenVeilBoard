@@ -3,7 +3,6 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
-  PlaneGeometry,
 } from "../engine/index.js";
 import {
   getCounterLayout,
@@ -11,13 +10,15 @@ import {
   createIndentFloorGeometry,
   applyBoxUVs,
 } from "../shared/counterGeometry.js";
+import { loadPlasterTextures, paintWearUniforms } from "./plaster.js";
 import {
-  createPlasterMaterial,
-  loadPlasterTextures,
-  paintWearUniforms,
-} from "./plaster.js";
+  loadSurfaceTextureSet,
+  resolveSurfaceTheme,
+} from "./surfacePresets.js";
+import { createSurfaceMaterial } from "./surfaceMaterial.js";
 import { ArchiveWell } from "./ArchiveWell.js";
 import { CounterSlot } from "./CounterSlot.js";
+
 export class Counter {
   constructor(ctx) {
     this.ctx = ctx;
@@ -28,21 +29,76 @@ export class Counter {
     this.floor = new Mesh();
     this.floor.receiveShadow = true;
     this.object.add(this.slab, this.floor);
+    this.theme = resolveSurfaceTheme(null);
+    this.themeVersion = 0;
+    this.frameTextures = null;
+    this.trayTextures = null;
+    this.updateSurfaceInk();
     this.off = ctx.app.stores.size.subscribe(() => this.rebuild());
     this.rebuild();
-    this.ready = loadPlasterTextures(ctx.controls.material.anisotropy).then(
-      (textures) => {
-        if (!this.disposed) {
-          this.textures = textures;
-          this.rebuild();
-        }
-      },
-    );
+    // Always load plaster base maps once so SurfaceClock3D paintMaps stay populated
+    this.ready = Promise.all([
+      loadPlasterTextures(ctx.controls.material.anisotropy),
+      this.loadThemeTextures(this.theme),
+    ]).then(() => {
+      if (!this.disposed) this.rebuild(true);
+    });
   }
-  rebuild() {
+
+  updateSurfaceInk() {
+    const tray = this.theme.tray;
+    this.ctx.surfaceInk = {
+      isDark: Boolean(tray.isDark),
+      stampInk: tray.stampInk ?? "#514b3e",
+      stampHoverInk: tray.stampHoverInk ?? "#2a241b",
+      wellInk: tray.wellInk ?? "#655d4c",
+      slotBaseColor: tray.slotBaseColor ?? "#24211c",
+    };
+  }
+
+  async loadThemeTextures(resolved) {
+    const aniso = this.ctx.controls.material.anisotropy;
+    const [frameTex, trayTex] = await Promise.all([
+      loadSurfaceTextureSet(resolved.frame, aniso),
+      loadSurfaceTextureSet(resolved.tray, aniso),
+    ]);
+    if (this.disposed) return;
+    this.frameTextures = frameTex;
+    this.trayTextures = trayTex;
+  }
+
+  async setSurfaceTheme(nextTheme) {
+    const resolved = resolveSurfaceTheme(nextTheme);
+    const same =
+      resolved.frameId === this.theme.frameId &&
+      resolved.trayId === this.theme.trayId;
+    if (same && this.slabSurface && this.floorSurface) return;
+    this.theme = resolved;
+    const token = ++this.themeVersion;
+    this.updateSurfaceInk();
+    await this.loadThemeTextures(resolved);
+    if (this.disposed || token !== this.themeVersion) return;
+    this.disposeSurfaces();
+    this.rebuild(true);
+    this.ctx.clock?.refreshInk?.();
+  }
+
+  disposeSurfaces() {
+    if (this.slabSurface) {
+      this.slabSurface.material.dispose();
+      this.slabSurface = null;
+    }
+    if (this.floorSurface) {
+      this.floorSurface.material.dispose();
+      this.floorSurface = null;
+    }
+  }
+
+  rebuild(force = false) {
     const { app, controls, counter } = this.ctx;
-    const layoutKey = `${app.size.width}|${app.size.height}|${Boolean(this.textures)}`;
-    if (layoutKey === this.layoutKey) return;
+    const ready = Boolean(this.frameTextures && this.trayTextures);
+    const layoutKey = `${app.size.width}|${app.size.height}|${ready}|${this.theme.frameId}|${this.theme.trayId}`;
+    if (!force && layoutKey === this.layoutKey) return;
     this.layoutKey = layoutKey;
     const layout = getCounterLayout(
       app.size.width,
@@ -91,7 +147,7 @@ export class Counter {
     this.slab.geometry = geometry;
     this.floor.geometry = createIndentFloorGeometry(layout, zone, slot);
     this.floor.position.y = floorY;
-    if (!this.textures) {
+    if (!ready) {
       this.slab.material ??= new MeshBasicMaterial({ color: "#b8b2a6" });
       this.floor.material ??= new MeshBasicMaterial({ color: "#d8d2c8" });
       return;
@@ -114,48 +170,63 @@ export class Counter {
       radius: layout.indentRadius,
       fade: 0.05,
       blur: 1.1,
-      opacity: 0.64,
-      color: "#1a1814",
+      opacity: this.theme.frame.cavityOpacity ?? 0.64,
+      color: this.theme.frame.cavityColor ?? "#1a1814",
     };
-    const cavity = { ...rim, kind: undefined, opacity: 0.35, fade: 0.08 };
-    if (!this.slabPlaster) {
-      this.slab.material?.dispose();
-      this.floor.material?.dispose();
-      this.slabPlaster = createPlasterMaterial(
-        this.textures,
-        controls.material,
+    const cavity = {
+      ...rim,
+      kind: undefined,
+      opacity: this.theme.tray.cavityOpacity ?? 0.35,
+      fade: 0.08,
+      color: this.theme.tray.cavityColor ?? "#1a1814",
+    };
+
+    if (!this.slabSurface || !this.floorSurface) {
+      if (this.slab.material && !this.slabSurface) this.slab.material.dispose();
+      if (this.floor.material && !this.floorSurface) this.floor.material.dispose();
+      this.slabSurface = createSurfaceMaterial(
+        this.theme.frame,
+        this.frameTextures,
         extent,
         rim,
-        { bump: false, wear: worn },
+        { bump: this.theme.frame.kind !== "plaster", wear: worn },
       );
-      this.floorPlaster = createPlasterMaterial(
-        this.textures,
-        controls.material,
+      this.floorSurface = createSurfaceMaterial(
+        this.theme.tray,
+        this.trayTextures,
         extent,
         cavity,
         { wear: worn },
       );
-      this.slab.material = this.slabPlaster.material;
-      this.floor.material = this.floorPlaster.material;
+      this.slab.material = this.slabSurface.material;
+      this.floor.material = this.floorSurface.material;
     } else {
-      this.slabPlaster.update(controls.material, extent, rim, {
-        bump: false,
+      this.slabSurface.update(this.theme.frame, extent, rim, {
+        bump: this.theme.frame.kind !== "plaster",
         wear: worn,
       });
-      this.floorPlaster.update(controls.material, extent, cavity, {
+      this.floorSurface.update(this.theme.tray, extent, cavity, {
         wear: worn,
       });
     }
-    paintWearUniforms.amount.value = controls.wear.text;
-    paintWearUniforms.dirt.value = controls.wear.stains * 2;
+    paintWearUniforms.amount.value =
+      this.theme.tray.wearMode === "plaster" ? controls.wear.text : 0.16;
+    paintWearUniforms.dirt.value =
+      this.theme.tray.wearMode === "plaster" ? controls.wear.stains * 2 : 0.06;
     this.well?.dispose();
-    this.well = new ArchiveWell(this.ctx, this.floorPlaster.material);
+    this.well = new ArchiveWell(this.ctx, this.floorSurface.material);
     this.well.setArchived(this.archivedNotes ?? []);
     this.object.add(this.well.object);
     this.slotModule?.dispose();
-    this.slotModule = new CounterSlot(slot, floorY, this.floorPlaster.material);
+    this.slotModule = new CounterSlot(
+      slot,
+      floorY,
+      this.floorSurface.material,
+      this.ctx.surfaceInk?.slotBaseColor,
+    );
     this.object.add(this.slotModule.object);
   }
+
   dispose() {
     this.disposed = true;
     this.off();
@@ -163,8 +234,9 @@ export class Counter {
     this.slotModule?.dispose();
     this.slab.geometry?.dispose();
     this.floor.geometry?.dispose();
-    this.slab.material?.dispose();
-    this.floor.material?.dispose();
+    this.disposeSurfaces();
+    this.slab.material?.dispose?.();
+    this.floor.material?.dispose?.();
     this.object.removeFromParent();
   }
 }

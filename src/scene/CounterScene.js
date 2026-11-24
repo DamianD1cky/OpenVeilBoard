@@ -26,6 +26,7 @@ import { NoteField } from "./NoteField.js";
 import { RopeLinkLayer } from "./RopeLinkLayer.js";
 import { SurfaceClock3D } from "./SurfaceClock3D.js";
 import { TableDiceLayer } from "./TableDiceLayer.js";
+import { NoteProjection } from "./NoteProjection.js";
 import { Opening } from "./Opening.js";
 import { DustField } from "./DustField.js";
 export class CounterScene {
@@ -127,9 +128,12 @@ export class CounterScene {
     app.scene.add(this.rope.object);
     this.clock = ctx.clock = new SurfaceClock3D(ctx);
     app.scene.add(this.clock.object);
+    this.projection = ctx.projection = new NoteProjection(ctx);
+    app.scene.add(this.projection.object);
     this.dice = ctx.dice = new TableDiceLayer(ctx, this.field, (roll) =>
       this.callbacks.onDiceSettled?.(roll),
     );
+    ctx.onDiceState = (state) => this.callbacks.onDiceState?.(state);
     app.scene.add(this.dice.object);
     this.opening = new Opening(ctx);
     this.dust = new DustField(ctx);
@@ -178,7 +182,10 @@ export class CounterScene {
           app.size.width,
           app.size.height,
         );
-        ctx.post.viewerProgress = this.blur.value;
+        ctx.post.viewerProgress = Math.max(
+          this.blur.value,
+          (this.projection?.lightboxProgress ?? 0) * 0.85,
+        );
         ctx.post.render(app.scene, app.camera, null);
       }, 1),
     );
@@ -281,9 +288,28 @@ export class CounterScene {
     fn(this.getIndentRect());
     return () => this.indentListeners.delete(fn);
   }
+  setNoteProjection(state) {
+    this.projection?.setState(state);
+  }
+  selectProjectionIndex(index) {
+    this.projection?.selectIndex(index);
+  }
+  openProjectionLightbox(index) {
+    this.projection?.openLightbox(index);
+  }
+  closeProjectionLightbox(immediate = false) {
+    this.projection?.closeLightbox(immediate);
+  }
+  setSurfaceTheme(theme) {
+    return this.counter?.setSurfaceTheme(theme);
+  }
+  burnNote(id, done) {
+    this.field.burnAndRemove(id, done);
+  }
   setRouteView(activePage) {
     this.routeActive = Boolean(activePage);
     this.field.setSwept(this.routeActive);
+    this.dice?.setSwept(this.routeActive);
     this.rope.setVisible(!this.routeActive);
     if (this.clock?.object) this.clock.object.visible = !this.routeActive;
   }
@@ -327,6 +353,7 @@ export class CounterScene {
     this.disposed = true;
     this.cleanups.forEach((fn) => fn());
     this.dice?.dispose();
+    this.projection?.dispose();
     this.rope?.dispose();
     this.field?.dispose();
     this.clock?.dispose();

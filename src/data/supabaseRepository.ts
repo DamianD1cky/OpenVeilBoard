@@ -10,6 +10,86 @@ import { legacyToNormalized } from "../domain/geometry.js";
 export function createSupabaseRepository(campaignId: string): BoardRepository {
   const client = requireSupabase();
   const urlCache = new Map<string, { url: string; until: number }>();
+  const extKey = `veilboard:note-ext:${campaignId}`;
+  let supportsExtendedFields = true;
+
+  function readLocalExt(): Record<string, { burn?: any; media?: any[] }> {
+    try {
+      const raw = localStorage.getItem(extKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+  function writeLocalExt(noteId: string, patch: Record<string, any>) {
+    if (!("burn" in patch) && !("media" in patch)) return;
+    try {
+      const all = readLocalExt();
+      const prev = all[noteId] ?? {};
+      const next = {
+        ...prev,
+        ...("burn" in patch ? { burn: patch.burn ?? null } : {}),
+        ...("media" in patch ? { media: patch.media ?? [] } : {}),
+      };
+      all[noteId] = next;
+      localStorage.setItem(extKey, JSON.stringify(all));
+    } catch {}
+  }
+  function deleteLocalExt(noteId: string) {
+    try {
+      const all = readLocalExt();
+      if (noteId in all) {
+        delete all[noteId];
+        localStorage.setItem(extKey, JSON.stringify(all));
+      }
+    } catch {}
+  }
+
+  async function saveNoteRpc(
+    noteId: string,
+    patch: Record<string, any>,
+    expected: Record<string, any> | null,
+  ) {
+    const pPatch = toPatch(patch, supportsExtendedFields);
+    const pExpected = expected ? toPatch(expected, supportsExtendedFields) : null;
+    try {
+      return await rpc("save_veilboard_note", {
+        p_campaign_id: campaignId,
+        p_id: noteId,
+        p_patch: pPatch,
+        p_expected: pExpected,
+      });
+    } catch (cause: any) {
+      const msg = String(cause?.message ?? cause ?? "");
+      const hasExt =
+        "media" in pPatch ||
+        "burn_config" in pPatch ||
+        (pExpected && ("media" in pExpected || "burn_config" in pExpected));
+      if (msg.includes("INVALID_NOTE_PATCH") && hasExt) {
+        // Remote Supabase project has not applied 20261124000000_veilboard_upgrades.sql yet:
+        // gracefully downgrade RPC payload and persist extended fields locally.
+        supportsExtendedFields = false;
+        writeLocalExt(noteId, patch);
+        const fallbackPatch = toPatch(patch, false);
+        const fallbackExpected = expected ? toPatch(expected, false) : null;
+        if (!Object.keys(fallbackPatch).length) {
+          // Only extended fields (e.g. burn) changed; return current note overlaid with local ext
+          const board = await rpc<any>("get_veilboard", {
+            p_campaign_id: campaignId,
+          });
+          const existing = (board.notes ?? []).find((n: any) => n.id === noteId);
+          if (existing) return existing;
+        }
+        return await rpc("save_veilboard_note", {
+          p_campaign_id: campaignId,
+          p_id: noteId,
+          p_patch: fallbackPatch,
+          p_expected: fallbackExpected,
+        });
+      }
+      throw cause;
+    }
+  }
   async function imageUrl(path: string) {
     const cached = urlCache.get(path);
     if (cached && cached.until > Date.now()) return cached.url;
@@ -28,6 +108,34 @@ export function createSupabaseRepository(campaignId: string): BoardRepository {
       r.surface_x == null || r.surface_y == null
         ? legacyToNormalized(r.x, r.y)
         : { x: r.surface_x, y: r.surface_y };
+    const hasServerExt = "media" in r || "burn_config" in r;
+    if (!hasServerExt) supportsExtendedFields = false;
+    const localExt = hasServerExt ? null : (readLocalExt()[r.id] ?? null);
+    const serverMedia = Array.isArray(r.media) && r.media.length > 0 ? r.media : null;
+    const localMedia =
+      !serverMedia && Array.isArray(localExt?.media) && localExt.media.length > 0
+        ? localExt.media
+        : null;
+    const rawMedia: Array<{ id?: string; path: string; caption?: string; aspect?: number }> =
+      serverMedia ??
+      localMedia ??
+      (r.image_path ? [{ id: "cover", path: r.image_path }] : []);
+    const media = await Promise.all(
+      rawMedia.map(async (item, idx) => ({
+        id: item.id || `media-${idx}`,
+        path: item.path,
+        url: item.path ? await imageUrl(item.path) : null,
+        caption: item.caption ?? "",
+        aspect: typeof item.aspect === "number" ? item.aspect : undefined,
+      })),
+    );
+    const coverPath = r.image_path ?? media[0]?.path ?? null;
+    const coverUrl =
+      coverPath && media[0]?.path === coverPath
+        ? (media[0].url ?? null)
+        : coverPath
+          ? await imageUrl(coverPath)
+          : null;
     return {
       id: r.id,
       campaignId,
@@ -45,8 +153,10 @@ export function createSupabaseRepository(campaignId: string): BoardRepository {
       authorName: r.author_name ?? "",
       createdAt: r.created_at,
       updatedAt: r.updated_at,
-      imagePath: r.image_path,
-      imageUrl: r.image_path ? await imageUrl(r.image_path) : null,
+      imagePath: coverPath,
+      imageUrl: coverUrl,
+      media,
+      burn: hasServerExt ? (r.burn_config ?? null) : (localExt?.burn ?? null),
       version: r.surface_version ?? 0,
     };
   }
@@ -74,30 +184,19 @@ export function createSupabaseRepository(campaignId: string): BoardRepository {
       };
     },
     async create(note) {
-      return mapNote(
-        await rpc("save_veilboard_note", {
-          p_campaign_id: campaignId,
-          p_id: note.id,
-          p_patch: toPatch(note),
-          p_expected: null,
-        }),
-      );
+      if (!supportsExtendedFields) writeLocalExt(note.id, note);
+      return mapNote(await saveNoteRpc(note.id, note, null));
     },
     async save(note, patch, expected) {
-      return mapNote(
-        await rpc("save_veilboard_note", {
-          p_campaign_id: campaignId,
-          p_id: note.id,
-          p_patch: toPatch(patch),
-          p_expected: toPatch(expected),
-        }),
-      );
+      if (!supportsExtendedFields) writeLocalExt(note.id, patch);
+      return mapNote(await saveNoteRpc(note.id, patch, expected));
     },
     async remove(id) {
       await rpc("delete_veilboard_note", {
         p_campaign_id: campaignId,
         p_id: id,
       });
+      deleteLocalExt(id);
       urlCache.clear();
     },
     async saveEdge(edge) {
@@ -245,7 +344,7 @@ export function createSupabaseRepository(campaignId: string): BoardRepository {
     },
   };
 }
-function toPatch(patch: Record<string, any>) {
+function toPatch(patch: Record<string, any>, includeExtended = true) {
   const names: Record<string, string> = {
     x: "surface_x",
     y: "surface_y",
@@ -253,6 +352,7 @@ function toPatch(patch: Record<string, any>) {
     pinColor: "pin_color",
     imagePath: "image_path",
     archivedAt: "archived_at",
+    burn: "burn_config",
   };
   const allowed = new Set([
     "title",
@@ -266,10 +366,29 @@ function toPatch(patch: Record<string, any>) {
     "archived_at",
     "color",
     "capabilities",
+    ...(includeExtended ? ["media", "burn_config"] : []),
   ]);
-  return Object.fromEntries(
-    Object.entries(patch)
-      .map(([key, value]) => [names[key] ?? key, value])
-      .filter(([key]) => allowed.has(key as string)),
-  );
+  const entries = Object.entries(patch)
+    .map(([key, value]) => {
+      const mapped = names[key] ?? key;
+      if (mapped === "media" && Array.isArray(value)) {
+        return [
+          mapped,
+          value.map((m: any) => ({
+            id: m.id,
+            path: m.path,
+            ...(m.caption ? { caption: m.caption } : {}),
+            ...(typeof m.aspect === "number" ? { aspect: m.aspect } : {}),
+          })),
+        ];
+      }
+      return [mapped, value];
+    })
+    .filter(([key, value]) => {
+      if (!allowed.has(key as string)) return false;
+      if (key === "burn_config" && value === undefined) return false;
+      if (key === "media" && value === undefined) return false;
+      return true;
+    });
+  return Object.fromEntries(entries);
 }

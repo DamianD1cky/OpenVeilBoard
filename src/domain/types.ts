@@ -10,6 +10,30 @@ export type CapabilityType =
   | "tags";
 export type CardStyle = "polaroid" | "note" | "dossier" | "urgent";
 export type PinColor = "red" | "blue" | "green" | "yellow" | "black";
+export type BurnMode = "none" | "scorched" | "burning";
+export type BurnTopology = "corner" | "bottom" | "perimeter" | "point";
+export interface NoteBurnConfig {
+  mode: BurnMode;
+  topology: BurnTopology;
+  progress: number;
+  origin: [number, number];
+  glowIntensity?: number;
+  seed?: number;
+}
+export interface NoteMediaItem {
+  id: string;
+  path: string;
+  url?: string | null;
+  caption?: string;
+  aspect?: number;
+}
+export interface SurfaceTheme {
+  presetId: string;
+  framePreset?: string;
+  trayPreset?: string;
+  frameColor?: string;
+  trayColor?: string;
+}
 export interface NoteCapability<T = Record<string, any>> {
   id: string;
   type: CapabilityType;
@@ -30,6 +54,8 @@ export interface Note {
   pinColor: PinColor;
   imagePath: string | null;
   imageUrl: string | null;
+  media?: NoteMediaItem[];
+  burn?: NoteBurnConfig | null;
   capabilities: NoteCapability[];
   archivedAt: string | null;
   authorId: string;
@@ -72,6 +98,8 @@ export type NotePatch = Partial<
     | "color"
     | "pinColor"
     | "imagePath"
+    | "media"
+    | "burn"
     | "capabilities"
     | "archivedAt"
   >

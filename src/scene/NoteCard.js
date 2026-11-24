@@ -1,11 +1,14 @@
 import {
   Group,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   SkinnedMesh,
   CylinderGeometry,
   SphereGeometry,
   DoubleSide,
+  FrontSide,
+  Vector2,
   Vector3,
 } from "../engine/index.js";
 import { createPolaroidRig } from "../features/polaroids/polaroidRig.js";
@@ -18,7 +21,9 @@ import {
   createNoteTexture,
   cardAspect,
   noteRoughnessMap,
+  notePaperNormalMap,
 } from "../features/polaroids/noteTexture.js";
+import { createNoteBurnHooks } from "../features/polaroids/noteBurnHooks.js";
 import { fitScaleInWell, wellSeatOffsetZ } from "./ArchiveWell.js";
 import { gsap, whenMotion } from "../shared/motion.js";
 const pinColors = {
@@ -35,11 +40,22 @@ export class NoteCard {
     this.paper = new Group();
     this.paper.rotation.x = -Math.PI / 2;
     this.object.add(this.paper);
-    this.material = new MeshStandardMaterial({
-      roughness: 0.83,
-      metalness: 0,
+    this.burnHooks = createNoteBurnHooks(note, cardAspect(note.cardStyle));
+    this.burnActive = 0;
+    this.burningAway = false;
+    this.material = new MeshPhysicalMaterial({
+      roughness: 0.68,
+      metalness: 0.03,
+      clearcoat: 0.14,
+      clearcoatRoughness: 0.34,
+      envMapIntensity: 1.65,
+      normalMap: notePaperNormalMap(),
+      normalScale: new Vector2(0.18, 0.18),
+      alphaTest: 0.08,
       side: DoubleSide,
+      shadowSide: FrontSide,
     });
+    this.material.hooks = this.burnHooks.hooks;
     this.mesh = new SkinnedMesh(undefined, this.material);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -107,7 +123,11 @@ export class NoteCard {
       this.texture?.dispose();
       this.texture = createNoteTexture(note);
       this.material.map = this.texture;
-      this.material.roughnessMap = noteRoughnessMap(note);
+      this.material.roughnessMap = noteRoughnessMap(note, false);
+      const isPolaroid = note.cardStyle === "polaroid";
+      this.material.roughness = isPolaroid ? 0.54 : 0.72;
+      this.material.clearcoat = isPolaroid ? 0.32 : 0.10;
+      this.material.envMapIntensity = isPolaroid ? 2.1 : 1.5;
       this.material.needsUpdate = true;
       const token = (this.imageToken = {});
       if (note.imageUrl) {
@@ -119,10 +139,15 @@ export class NoteCard {
           this.texture = createNoteTexture(note, image);
           this.material.map = this.texture;
           this.material.roughnessMap = noteRoughnessMap(note, true);
+          this.material.roughness = isPolaroid ? 0.44 : 0.64;
+          this.material.clearcoat = isPolaroid ? 0.42 : 0.18;
           this.material.needsUpdate = true;
         };
         image.src = note.imageUrl;
       }
+    }
+    if (!this.burningAway) {
+      this.burnActive = this.burnHooks.update(note, aspect);
     }
     this.pinMaterial.color.set(pinColors[note.pinColor] ?? pinColors.red);
     this.note = note;
@@ -233,6 +258,9 @@ export class NoteCard {
   frame(dt) {
     if (this.disposed) return;
     const stepDt = Math.min(dt || 0.016, 0.05);
+    if (this.burnActive === 2 || this.burningAway) {
+      this.burnHooks.uniforms.uBurnTime.value += stepDt;
+    }
     const k = 1 - Math.exp(-18 * stepDt),
       now = performance.now();
     if (!this.printing && !this.swept) {
@@ -279,7 +307,9 @@ export class NoteCard {
     }
   }
   anchor() {
-    return this.pin.getWorldPosition(new Vector3());
+    const pos = this.pin.getWorldPosition(new Vector3());
+    pos.y += 0.014;
+    return pos;
   }
   sweepOut(exitX, targetZ, lift, delaySec = 0) {
     this.swept = true;
@@ -376,9 +406,39 @@ export class NoteCard {
       ease: "power2.out",
     });
   }
+  burnAway(done) {
+    if (this.burningAway) return;
+    this.burningAway = true;
+    this.printing = true;
+    this.wakeLinks();
+    this.wakeWiggle();
+    const u = this.burnHooks.uniforms;
+    u.uBurnActive.value = 2;
+    u.uBurnTopo.value = 0; // corner radial burn
+    u.uBurnOrigin.value.set(0.86, 0.14);
+    u.uBurnGlow.value = 2.8;
+    const startP = Math.max(0.02, u.uBurnProgress.value);
+    const anim = { p: startP };
+    this.burnAnim = anim;
+    gsap.to(anim, {
+      p: 1.05,
+      duration: whenMotion(0.95),
+      ease: "power1.in",
+      onUpdate: () => {
+        u.uBurnProgress.value = anim.p;
+        if (anim.p > 0.65 && this.pin.visible) {
+          this.pin.visible = false;
+        }
+      },
+      onComplete: () => {
+        done?.();
+      },
+    });
+  }
   dispose() {
     this.disposed = true;
     this.off();
+    if (this.burnAnim) gsap.killTweensOf(this.burnAnim);
     gsap.killTweensOf(this.object.position);
     gsap.killTweensOf(this.object.scale);
     this.wiggle.dispose();

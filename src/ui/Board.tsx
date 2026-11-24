@@ -19,13 +19,18 @@ import { HoverDeck } from "./HoverDeck";
 import { ClockDialog } from "./ClockDialog";
 import { EdgeDialog } from "./EdgeDialog";
 import { PaperDialog, type IndentRect } from "./PaperDialog";
+import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
+import {
+  loadSavedSurfaceTheme,
+  saveSurfaceTheme,
+} from "../scene/surfacePresets.js";
 import { boardPlacement } from "./boardPlacement";
 import {
   getBoardRoute,
   navigateBoard,
   subscribeBoardRoute,
 } from "../shared/navigation";
-import type { NoteEdge } from "../domain/types";
+import type { NoteEdge, SurfaceTheme } from "../domain/types";
 import type { DiceRoll } from "../features/dice/types";
 export function Board({
   room,
@@ -59,7 +64,18 @@ export function Board({
   );
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const route = useSyncExternalStore(subscribeBoardRoute, getBoardRoute);
-  const [overlay, setOverlay] = useState<"clock" | "dice" | null>(null);
+  const [overlay, setOverlay] = useState<"clock" | "dice" | "surface" | null>(
+    null,
+  );
+  const [surfaceTheme, setSurfaceTheme] = useState<SurfaceTheme>(() =>
+    loadSavedSurfaceTheme(room.campaignId),
+  );
+  useEffect(() => {
+    setSurfaceTheme(loadSavedSurfaceTheme(room.campaignId));
+  }, [room.campaignId]);
+  useEffect(() => {
+    void scene?.setSurfaceTheme?.(surfaceTheme);
+  }, [scene, surfaceTheme]);
   const [indentRect, setIndentRect] = useState<IndentRect | null>(null);
   const [edge, setEdge] = useState<NoteEdge | null>(null),
     [hovered, setHovered] = useState<string | null>(null),
@@ -69,7 +85,8 @@ export function Board({
     [formula, setFormula] = useState("1d20"),
     [material, setMaterial] = useState("ivory"),
     [result, setResult] = useState<DiceRoll | null>(null),
-    [rolling, setRolling] = useState(false);
+    [rolling, setRolling] = useState(false),
+    [diceDocked, setDiceDocked] = useState(false);
   const [hoverBlocked, setHoverBlocked] = useState(false);
   useEffect(() => {
     const hide = () => {
@@ -192,7 +209,7 @@ export function Board({
       setLinking(false);
       setLinkStart(null);
       setResult(null);
-      scene?.dice.clear();
+      scene?.dice.tidyToCorner();
     },
     onLinkStart: (id) => {
       if (room.role !== "observer") {
@@ -214,6 +231,8 @@ export function Board({
           (bridge.current as any)[name](...args)),
     );
     scene.callbacks.onDiceSettled = (dice: DiceRoll) => setResult(dice);
+    scene.callbacks.onDiceState = (next: string) =>
+      setDiceDocked(next === "docked");
     scene.enter(
       Boolean(localStorage.getItem(`veilboard:visited:${session.user.id}`)),
     );
@@ -229,7 +248,7 @@ export function Board({
     scene?.sync(state);
   }, [scene, state.notes, state.edges, state.clock]);
   const activeModal = Boolean(route.kind !== "home" || overlay || edge);
-  const overlayBlur = Boolean(overlay || edge);
+  const overlayBlur = Boolean((overlay && overlay !== "surface") || edge);
   useEffect(() => {
     if (!scene?.onIndentRect) {
       setIndentRect(null);
@@ -295,6 +314,15 @@ export function Board({
               </button>
               <button
                 role="menuitem"
+                onClick={() => {
+                  setRoomMenu(false);
+                  setOverlay(overlay === "surface" ? null : "surface");
+                }}
+              >
+                台面纹理
+              </button>
+              <button
+                role="menuitem"
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(room.joinCode);
@@ -331,6 +359,14 @@ export function Board({
                 {linking ? "取消连线" : "连线"}
               </button>
               <button onClick={() => setOverlay("dice")}>投骰</button>
+              <button
+                aria-pressed={overlay === "surface"}
+                onClick={() =>
+                  setOverlay(overlay === "surface" ? null : "surface")
+                }
+              >
+                台面
+              </button>
             </>
           )}
           <button onClick={onAccount} aria-label="账号设置">
@@ -361,6 +397,7 @@ export function Board({
         userId={session.user.id}
         role={room.role}
         hidden={activeModal || hoverBlocked}
+        raised={diceDocked}
       />
       {(error || state.error) && (
         <div role="alert" className="board-error">
@@ -382,9 +419,20 @@ export function Board({
           key={selectedId ?? "new"}
           note={currentNote}
           store={store}
+          scene={scene}
           userId={session.user.id}
           role={room.role}
           onClose={close}
+          onDelete={(id) => {
+            close();
+            if (scene?.burnNote) {
+              setTimeout(() => {
+                scene.burnNote(id, () => safe(store.remove(id)));
+              }, 260);
+            } else {
+              safe(store.remove(id));
+            }
+          }}
           onRoll={(notation, label, id) => roll(notation, label, id)}
           edges={state.edges.filter(
             (e) => e.fromNoteId === selectedId || e.toNoteId === selectedId,
@@ -415,6 +463,16 @@ export function Board({
           onClose={close}
           onInspect={inspect}
           indentRect={indentRect}
+        />
+      )}
+      {overlay === "surface" && (
+        <SurfaceThemeDrawer
+          theme={surfaceTheme}
+          onChange={(next) => {
+            setSurfaceTheme(next);
+            saveSurfaceTheme(room.campaignId, next);
+          }}
+          onClose={() => setOverlay(null)}
         />
       )}
       {overlay === "clock" && (
@@ -488,15 +546,18 @@ export function Board({
           {room.role !== "observer" && (
             <button
               onClick={() => {
-                safe(
-                  store.create({
-                    title: result.label || "投骰记录",
-                    body: result.result!.output,
-                    cardStyle: "dossier",
-                    capabilities: [],
-                  }),
-                );
+                const payload = {
+                  title: result.label || "投骰记录",
+                  body: result.result!.output,
+                  cardStyle: "dossier" as const,
+                  capabilities: [],
+                };
                 setResult(null);
+                if (scene?.dice?.collectIntoSlot) {
+                  scene.dice.collectIntoSlot(() => safe(store.create(payload)));
+                } else {
+                  safe(store.create(payload));
+                }
               }}
             >
               贴成便签
@@ -505,10 +566,10 @@ export function Board({
           <button
             onClick={() => {
               setResult(null);
-              scene?.dice.clear();
+              scene?.dice.tidyToCorner();
             }}
           >
-            收起
+            归拢
           </button>
         </div>
       )}

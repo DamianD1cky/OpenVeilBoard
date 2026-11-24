@@ -143,6 +143,8 @@ export function createBoardStore(
       pinColor: "red",
       imagePath: null,
       imageUrl: null,
+      media: [],
+      burn: null,
       capabilities: [],
       archivedAt: null,
       authorId: actor.id,
