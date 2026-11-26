@@ -144,7 +144,7 @@ export function TrayEventClockStage({
   const stageStyle: CSSProperties | undefined = indentRect
     ? {
         left: `${indentRect.left + 28}px`,
-        top: `${indentRect.top + 56}px`,
+        top: `${indentRect.top + Math.max(56, Math.round(indentRect.height * 0.088))}px`,
         width: `${Math.max(240, indentRect.width - 56)}px`,
       }
     : undefined;

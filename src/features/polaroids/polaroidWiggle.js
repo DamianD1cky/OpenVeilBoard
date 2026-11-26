@@ -14,9 +14,12 @@ export function createPolaroidWiggleUpdater(wiggle, root) {
   return (delta) => {
     const bones = wiggle.wiggleBones;
     if (!bones.length) return false;
-    const dt = Math.min(delta, 100);
-    if (dt < 0.006 && delta) return false;
-    const steps = dt >= 100 ? 25 : dt > 0.01 ? 2 : 1;
+    const dt =
+      Number.isFinite(delta) && delta > 0 ? Math.min(delta, 0.1) : 1 / 60;
+    // Continuous frame-rate-independent integration matching the 60Hz/120Hz reference
+    // cadence (120 effective steps/sec), so 165Hz / 240Hz / 360Hz displays never skip
+    // updates or freeze cards in a mid-flight bent pose.
+    const effectiveSteps = dt * 120;
     root.updateWorldMatrix(false, true);
     let moved = false;
     for (const bone of bones) {
@@ -33,7 +36,26 @@ export function createPolaroidWiggleUpdater(wiggle, root) {
         previous.copy(goal);
       }
       const response = Math.min(bone.options.velocity * 0.85, 0.99999);
-      previous.lerp(goal, 1 - (1 - response) ** steps);
+      const alpha = 1 - Math.pow(1 - response, effectiveSteps);
+      previous.lerp(goal, alpha);
+      const residualSq = previous.distanceToSquared(goal);
+      if (residualSq <= 1e-10) {
+        // Snap cleanly to exact rest pose before sleeping so zero residual bend remains.
+        previous.copy(goal);
+        target.quaternion.identity();
+        target.position.set(0, 0, 0);
+        target.updateMatrix();
+        bone.currentHelper.position.copy(previous);
+        if (
+          (previous.x - x) ** 2 +
+            (previous.y - y) ** 2 +
+            (previous.z - z) ** 2 >
+          1e-12
+        ) {
+          moved = true;
+        }
+        continue;
+      }
       direction.copy(previous).applyMatrix4(inverse.copy(parentMatrix).invert());
       const reach = bone.options.maxStretch * bone.originPosition.length();
       lag.copy(direction).sub(bone.originPosition);
@@ -47,14 +69,7 @@ export function createPolaroidWiggleUpdater(wiggle, root) {
       target.position.set(0, 0, 0);
       target.updateMatrix();
       bone.currentHelper.position.copy(previous);
-      if (
-        (previous.x - x) ** 2 +
-          (previous.y - y) ** 2 +
-          (previous.z - z) ** 2 >
-        1e-12
-      ) {
-        moved = true;
-      }
+      moved = true;
     }
     return moved;
   };

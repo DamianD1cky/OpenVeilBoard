@@ -16,6 +16,13 @@ import {
 } from "../src/domain/capabilityRegistry.ts";
 import { defaultCampaignClock } from "../src/features/campaign/domain/campaignClock.ts";
 import { computeAvoidanceOffsets } from "../src/domain/avoidance.ts";
+import { createPolaroidRig } from "../src/features/polaroids/polaroidRig.js";
+import { WiggleRig } from "../src/features/polaroids/wiggle.js";
+import {
+  configurePolaroidWiggle,
+  createPolaroidWiggleUpdater,
+} from "../src/features/polaroids/polaroidWiggle.js";
+import { Group } from "../src/engine/index.js";
 import { setImmediate as nextTurn } from "node:timers/promises";
 const note = {
   id: "a",
@@ -336,4 +343,44 @@ test("短内容便签自适应收窄高度，拍立得保持经典比例", () =>
     "短便签应明显比长便签更紧凑（宽高比更大）",
   );
   assert.equal(paperAspect(polaroid), 0.8);
+});
+test("高刷新率（240Hz）下纸卡骨骼摆动不会卡死变形，静止后完全恢复平整", () => {
+  const host = new Group();
+  const rig = createPolaroidRig(0.72, 0.56, { segmentsX: 10, segmentsY: 12 });
+  host.add(rig.root);
+  host.position.set(-2.4, 0.28, 0.1);
+  host.updateMatrixWorld(true);
+  const wiggle = new WiggleRig(rig.skeleton);
+  configurePolaroidWiggle(wiggle, 0.24, 0.24);
+  const update = createPolaroidWiggleUpdater(wiggle, rig.root);
+  wiggle.reset();
+  for (const wb of wiggle.wiggleBones) {
+    assert.equal(wb.target.position.length(), 0);
+  }
+  // Simulate enterFromLeft rapid flight + stopping at rest, driven at 240Hz (dt ≈ 0.00417s < 0.006s)
+  const dt240 = 1 / 240;
+  for (let i = 0; i < 40; i++) {
+    host.position.x = -2.4 + (i / 39) * 2.4;
+    host.position.y = 0.28 * (1 - i / 39);
+    host.updateMatrixWorld(true);
+    update(dt240);
+  }
+  // Confirm bones actually flexed during flight
+  const flexed = wiggle.wiggleBones.some(
+    (wb) => Math.abs(wb.target.quaternion.w - 1) > 1e-4,
+  );
+  assert.ok(flexed, "高速入场过程中四角骨骼应有弹性弯曲");
+  // Now card is stationary; run 240Hz frames for 0.8s and verify complete flat recovery
+  let lastMoved = true;
+  for (let i = 0; i < 192; i++) {
+    lastMoved = update(dt240);
+  }
+  assert.equal(lastMoved, false, "静止足够时间后应收敛并允许休眠");
+  for (const wb of wiggle.wiggleBones) {
+    assert.ok(
+      Math.abs(wb.target.quaternion.w - 1) < 1e-6,
+      `静止后骨骼四元数应完全归位，实际 w=${wb.target.quaternion.w}`,
+    );
+    assert.equal(wb.target.position.length(), 0);
+  }
 });

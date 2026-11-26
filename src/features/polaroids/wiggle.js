@@ -44,50 +44,44 @@ export class WiggleBone {
     this.originRotation = target.rotation.clone();
     this.oldBoneWorldPosition = new Vector3();
     this.oldBoneWorldRotation = new Quaternion();
-    this.target.getWorldPosition(this.oldBoneWorldPosition);
+    this.target.position.set(0, 0, 0);
+    this.target.updateMatrixWorld(true);
+    this.oldBoneWorldPosition.copy(this.originPosition);
+    this.target.parent.localToWorld(this.oldBoneWorldPosition);
     this.target.getWorldQuaternion(this.oldBoneWorldRotation);
     this.restLength = this.target.parent.position.length();
   }
   reset() {
     this._isFirstStep = true;
-    this.target.position.copy(this.originPosition);
+    this.target.position.set(0, 0, 0);
     this.target.rotation.copy(this.originRotation);
     this.target.updateMatrixWorld(true);
-    this.target.getWorldPosition(this.oldBoneWorldPosition);
+    this.oldBoneWorldPosition.copy(this.originPosition);
+    this.target.parent.localToWorld(this.oldBoneWorldPosition);
   }
   dispose() {
     this.reset();
     const wrapper = this.target.parent;
     const parent = wrapper.parent;
     parent.remove(wrapper);
+    this.target.position.copy(this.originPosition);
     parent.add(this.target);
   }
   update(dt = null) {
-    if (!dt) {
+    if (dt === null || dt === undefined) {
       if (this.ms) {
         const ms = performance.now();
-        dt = ms - this.ms;
-        dt /= 1e3;
+        dt = (ms - this.ms) / 1e3;
         this.ms = ms;
       } else {
         this.ms = performance.now();
-        dt = 16 / 1e3;
+        dt = 1 / 60;
       }
     }
-    let times = 1;
-    dt = Math.min(dt, 100);
-    if (dt > 0.01) {
-      times = 2;
-    }
-    if (dt >= 100) {
-      times = 25;
-    }
-    if (dt < 0.006) {
+    if (!Number.isFinite(dt) || dt <= 0) {
       return;
     }
-    for (let index = 0; index < times; index++) {
-      this.step(0.0085 * 100);
-    }
+    this.step(Math.min(dt, 0.1));
   }
   step(dt) {
     this.target.parent.updateMatrixWorld(true);
@@ -97,9 +91,11 @@ export class WiggleBone {
       this._isFirstStep = false;
       this.oldBoneWorldPosition.copy(this.targetHelper.position);
     }
+    const response = Math.min(this.options.velocity * 0.85, 0.99999);
+    const alpha = 1 - Math.pow(1 - response, dt * 120);
     goalPosition
       .copy(this.oldBoneWorldPosition)
-      .lerp(this.targetHelper.position, Math.min(this.options.velocity * dt, 0.99999));
+      .lerp(this.targetHelper.position, alpha);
     this.target.position.copy(goalPosition);
     this.target.parent.worldToLocal(this.target.position);
     this.oldBoneWorldPosition.copy(goalPosition);
