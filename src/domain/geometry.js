@@ -59,7 +59,8 @@ export const paperAspect = (styleOrNote) => {
     estimateWrappedLines(styleOrNote.title ?? "", 12, 2),
   );
   const cleanBody = String(styleOrNote.body ?? "")
-    .replace(/^[ \t]*([-*+]|\d+\.|>)\s+/gm, "")
+    .replace(/^[ \t]*([-*+]\s+\[[ xX]\]|[-*+]|\d+\.|>)\s+/gm, "")
+    .replace(/==/g, "")
     .replace(/[#*`>_~]/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();

@@ -6,6 +6,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
+  SphereGeometry,
   SRGBColorSpace,
   Vector3,
 } from "../engine/index.js";
@@ -14,6 +15,7 @@ import {
   classifyEdgeTag,
   parseEdgeLabel,
 } from "../domain/edgeRelations.ts";
+import { playSound } from "../features/audio/audioEngine.js";
 
 const STRING_SEGMENTS = 10;
 const RADIAL_SEGMENTS = 6;
@@ -243,6 +245,8 @@ export class RopeLinkLayer {
     this.links = new Map();
     this.active = new Set();
     this.byNote = new Map();
+    this.snapping = new Set();
+    this.snappedEdgeIds = new Set();
     this.off = ctx.app.onFrame(
       (_, dt) => this.frame(Math.min(dt, 1 / 30)),
       -0.4,
@@ -261,12 +265,16 @@ export class RopeLinkLayer {
     this.notes = notes;
     const active = visibleEdges(notes, edges),
       ids = new Set(active.map((e) => e.id));
+    for (const id of [...this.snappedEdgeIds]) {
+      if (!ids.has(id)) this.snappedEdgeIds.delete(id);
+    }
     for (const [id, link] of this.links)
       if (!ids.has(id)) {
         this.destroy(link);
         this.links.delete(id);
       }
     for (const edge of active) {
+      if (this.snappedEdgeIds.has(edge.id)) continue;
       let link = this.links.get(edge.id);
       if (!link) {
         const a = this.field.cards.get(edge.fromNoteId)?.anchor(),
@@ -421,6 +429,82 @@ export class RopeLinkLayer {
     for (const link of this.byNote.get(id) ?? []) this.wake(link);
   }
 
+  /**
+   * Plan A: Ember-sever and elastically recoil all strings connected to a burning note.
+   * Detached strings spark at the burned tip, whip & retract smoothly toward the surviving
+   * pin while fading out, and any attached relationship paper slip gently drops & fades.
+   */
+  snapNote(noteId) {
+    const connected = [...(this.byNote.get(noteId) ?? [])];
+    if (!connected.length) return;
+    playSound("polaroid.dock", { volume: 0.24, rate: 1.85 });
+    for (const link of connected) {
+      this.links.delete(link.edge.id);
+      this.active.delete(link);
+      this.snappedEdgeIds.add(link.edge.id);
+      for (const id of [link.edge.fromNoteId, link.edge.toNoteId]) {
+        const set = this.byNote.get(id);
+        set?.delete(link);
+        if (set?.size === 0) this.byNote.delete(id);
+      }
+
+      const burnedIsFrom = link.edge.fromNoteId === noteId;
+      const fixedId = burnedIsFrom ? link.edge.toNoteId : link.edge.fromNoteId;
+      const a =
+        this.field.cards.get(link.edge.fromNoteId)?.anchor() ??
+        link.lastA.clone();
+      const b =
+        this.field.cards.get(link.edge.toNoteId)?.anchor() ??
+        link.lastB.clone();
+      const burnTipStart = (burnedIsFrom ? a : b).clone();
+      const surviveEnd = (burnedIsFrom ? b : a).clone();
+
+      // Hide collar at the severed burning pin immediately
+      if (burnedIsFrom && link.collarA) link.collarA.visible = false;
+      if (!burnedIsFrom && link.collarB) link.collarB.visible = false;
+
+      // Glowing ember bead riding the severed burning tip
+      const emberMat = new MeshStandardMaterial({
+        color: "#ff9b3d",
+        emissive: "#ff4d1a",
+        emissiveIntensity: 3.4,
+        roughness: 0.3,
+        metalness: 0,
+        transparent: true,
+        opacity: 1,
+      });
+      const ember = new Mesh(new SphereGeometry(0.0075, 8, 6), emberMat);
+      ember.position.copy(burnTipStart);
+      ember.renderOrder = 8;
+      this.object.add(ember);
+
+      const labelStartPos = link.label
+        ? link.label.object.position.clone()
+        : null;
+      const labelStartRotZ = link.label ? link.label.object.rotation.z : 0;
+
+      link.pluckAmp = 0.015;
+      link.pluckPhase = 0;
+      link.snap = {
+        burnedIsFrom,
+        fixedId,
+        burnTipStart,
+        surviveEnd,
+        ember,
+        emberMat,
+        labelStartPos,
+        labelStartRotZ,
+        labelSpin: (Math.random() > 0.5 ? 1 : -1) * (0.28 + Math.random() * 0.22),
+        labelDriftX: (Math.random() - 0.5) * 0.05,
+        labelDriftZ: 0.02 + Math.random() * 0.03,
+        t: 0,
+        duration: 0.72,
+      };
+      this.snapping.add(link);
+    }
+    this.stats.awake = this.active.size + this.snapping.size;
+  }
+
   beginPreview(noteId, initialPoint = null) {
     this.clearPreview();
     const a = this.field.cards.get(noteId)?.anchor();
@@ -474,7 +558,7 @@ export class RopeLinkLayer {
   }
 
   frame(dt) {
-    if (!this.active.size) return;
+    if (!this.active.size && !this.snapping.size) return;
     const stepDt = dt || 1 / 60;
     for (const link of this.active) {
       this.stats.endpointSamples++;
@@ -505,12 +589,97 @@ export class RopeLinkLayer {
       link.still = !changed && link.pluckAmp === 0 ? link.still + stepDt : 0;
       if (link.still > 0.12) this.active.delete(link);
     }
-    this.stats.awake = this.active.size;
+
+    if (this.snapping.size) {
+      const floorY = this.ctx.counter.get().floorY ?? 0;
+      for (const link of [...this.snapping]) {
+        const s = link.snap;
+        s.t = Math.min(1, s.t + stepDt / s.duration);
+        const liveSurvive =
+          this.field.cards.get(s.fixedId)?.anchor() ?? s.surviveEnd;
+        s.surviveEnd.copy(liveSurvive);
+
+        // Phase 1 (0..0.16): ember flare & initial snap; Phase 2 (0.16..1): elastic recoil to surviving pin
+        let recoil;
+        let emberScale;
+        let emberGlow;
+        if (s.t < 0.16) {
+          const f = s.t / 0.16;
+          recoil = f * f * 0.07;
+          emberScale = 1.0 + Math.sin(f * Math.PI) * 0.55;
+          emberGlow = 3.8;
+        } else {
+          const u = (s.t - 0.16) / 0.84;
+          recoil = 0.07 + 0.93 * (1 - Math.pow(1 - u, 2.35));
+          emberScale = Math.max(0.01, (1 - u * 1.15) * 1.15);
+          emberGlow = Math.max(0, 3.4 * (1 - u * 1.25));
+        }
+
+        const dirX = s.surviveEnd.x - s.burnTipStart.x;
+        const dirZ = s.surviveEnd.z - s.burnTipStart.z;
+        const len = Math.hypot(dirX, dirZ) || 1;
+        const whip =
+          Math.sin(recoil * Math.PI * 1.65) * 0.032 * (1 - recoil);
+        const tipX =
+          s.burnTipStart.x + dirX * recoil + (-dirZ / len) * whip;
+        const tipZ =
+          s.burnTipStart.z + dirZ * recoil + (dirX / len) * whip;
+        const tipY =
+          s.burnTipStart.y +
+          (s.surviveEnd.y - s.burnTipStart.y) * recoil -
+          Math.sin(recoil * Math.PI) * 0.014;
+        this._tmpA.set(tipX, tipY, tipZ);
+
+        // Ember spark rides the severed burning tip
+        s.ember.position.copy(this._tmpA);
+        s.ember.scale.setScalar(emberScale);
+        s.emberMat.emissiveIntensity = emberGlow;
+        s.emberMat.opacity = Math.max(0, 1 - Math.max(0, (s.t - 0.65) / 0.25));
+        s.ember.visible = s.emberMat.opacity > 0.02;
+
+        // Strong recoil string vibration + smooth opacity fade in final 45%
+        link.pluckPhase += stepDt * 26 * Math.PI * 2;
+        link.pluckAmp *= Math.exp(-4.8 * stepDt);
+        const fade = s.t < 0.52 ? 1 : Math.max(0, 1 - (s.t - 0.52) / 0.48);
+        link.mesh.material.opacity = fade;
+        const radiusScale = Math.max(0.35, 1 - s.t * 0.45);
+
+        const endA = s.burnedIsFrom ? this._tmpA : s.surviveEnd;
+        const endB = s.burnedIsFrom ? s.surviveEnd : this._tmpA;
+        this.write(link, endA, endB, {
+          skipLabel: true,
+          radiusScale,
+        });
+
+        // Detached relationship paper slip drops gently onto tray and fades away
+        if (link.label && s.labelStartPos) {
+          const lt = Math.min(1, s.t / 0.78);
+          const easeDrop = 1 - Math.pow(1 - lt, 2.2);
+          const dropY =
+            s.labelStartPos.y +
+            (floorY + 0.016 - s.labelStartPos.y) * easeDrop;
+          link.label.object.position.set(
+            s.labelStartPos.x + s.labelDriftX * easeDrop,
+            dropY,
+            s.labelStartPos.z + s.labelDriftZ * easeDrop,
+          );
+          link.label.object.rotation.z =
+            s.labelStartRotZ + s.labelSpin * easeDrop;
+          link.label.material.opacity = Math.max(0, 1 - Math.pow(lt, 1.5));
+        }
+
+        if (s.t >= 1) {
+          this.snapping.delete(link);
+          this.destroy(link);
+        }
+      }
+    }
+    this.stats.awake = this.active.size + this.snapping.size;
   }
 
-  write(link, a, b) {
+  write(link, a, b, { skipLabel = false, radiusScale = 1 } = {}) {
     const cfg = STYLE_CONFIG[link.edge.style] ?? STYLE_CONFIG.rope;
-    const radius = cfg.radius;
+    const radius = cfg.radius * radiusScale;
     const geometry = link.mesh.geometry;
     const pos = geometry.attributes.position;
     const norm = geometry.attributes.normal;
@@ -577,7 +746,7 @@ export class RopeLinkLayer {
       link.collarB.position.copy(b);
     }
 
-    if (link.label) {
+    if (link.label && !skipLabel) {
       const midX = (a.x + b.x) * 0.5 + perpX * vib;
       const midY = Math.max(minStringY + 0.008, (a.y + b.y) * 0.5 - sag + 0.0065);
       const midZ = (a.z + b.z) * 0.5 + perpZ * vib;
@@ -599,11 +768,17 @@ export class RopeLinkLayer {
 
   destroy(link) {
     this.active.delete(link);
-    this.stats.awake = this.active.size;
+    this.snapping.delete(link);
+    this.stats.awake = this.active.size + this.snapping.size;
     for (const id of [link.edge.fromNoteId, link.edge.toNoteId]) {
       const links = this.byNote.get(id);
       links?.delete(link);
       if (links?.size === 0) this.byNote.delete(id);
+    }
+    if (link.snap?.ember) {
+      link.snap.ember.geometry.dispose();
+      link.snap.emberMat.dispose();
+      link.snap.ember.removeFromParent();
     }
     link.mesh.geometry.dispose();
     link.mesh.material.dispose();
@@ -617,6 +792,9 @@ export class RopeLinkLayer {
     this.off();
     this.clearPreview();
     this.links.forEach((link) => this.destroy(link));
+    this.snapping.forEach((link) => this.destroy(link));
+    this.snapping.clear();
+    this.snappedEdgeIds.clear();
     this.object.removeFromParent();
   }
 }

@@ -33,6 +33,292 @@ export function wrapText(ctx, text, width, lines = 4) {
   return result.slice(0, lines);
 }
 
+/**
+ * Parse inline Markdown formatting into styled runs for physical 3D cardstock rendering.
+ * Supports: `code`, ==highlight==, ~~strike~~, **bold**, *italic* (including nested combos).
+ */
+function parseInlineRuns(text, baseStyle = {}) {
+  const runs = [];
+  const str = String(text ?? "");
+  let i = 0;
+  let plain = "";
+  const flushPlain = () => {
+    if (plain) {
+      runs.push({ text: plain, ...baseStyle });
+      plain = "";
+    }
+  };
+  const patterns = [
+    { open: "`", close: "`", flag: "code", recurse: false },
+    { open: "==", close: "==", flag: "highlight", recurse: true },
+    { open: "~~", close: "~~", flag: "strike", recurse: true },
+    { open: "**", close: "**", flag: "bold", recurse: true },
+    { open: "*", close: "*", flag: "italic", recurse: true },
+  ];
+  while (i < str.length) {
+    let matched = false;
+    for (const p of patterns) {
+      if (!str.startsWith(p.open, i)) continue;
+      // Avoid matching `**` as single `*`
+      if (p.open === "*" && str.startsWith("**", i)) continue;
+      const start = i + p.open.length;
+      const end = str.indexOf(p.close, start);
+      if (end > start) {
+        flushPlain();
+        const inner = str.slice(start, end);
+        const nextStyle = { ...baseStyle, [p.flag]: true };
+        if (p.recurse) {
+          runs.push(...parseInlineRuns(inner, nextStyle));
+        } else {
+          runs.push({ text: inner, ...nextStyle });
+        }
+        i = end + p.close.length;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      plain += str[i];
+      i++;
+    }
+  }
+  flushPlain();
+  return runs;
+}
+
+function runFont(run, baseSize) {
+  if (run.code) {
+    const size = Math.round(baseSize * 0.86);
+    return `${run.bold ? "700 " : "500 "}${size}px ui-monospace, "SF Mono", Menlo, monospace`;
+  }
+  const weight = run.heading || run.bold ? "700" : "400";
+  const italic = run.italic ? "italic " : "";
+  const size = run.heading ? Math.round(baseSize * 1.12) : baseSize;
+  const family = run.heading
+    ? '"Songti SC", "Noto Serif SC", Georgia, "PingFang SC", serif'
+    : '"PingFang SC", "Noto Sans CJK SC", sans-serif';
+  return `${italic}${weight} ${size}px ${family}`;
+}
+
+function drawRichBody(ctx, body, { x, y, maxW, maxLines, lineH, dark }) {
+  if (!body || maxLines <= 0) return;
+  const baseSize = 34;
+  const inkMain = dark ? "#e4d2b4" : "#3f372b";
+  const inkStrong = dark ? "#f7ecd4" : "#221b13";
+  const inkMuted = dark ? "rgba(228, 210, 180, 0.66)" : "rgba(63, 55, 43, 0.62)";
+  const highlightBg = dark
+    ? "rgba(224, 102, 86, 0.34)"
+    : "rgba(182, 48, 36, 0.22)";
+  const codeBg = dark
+    ? "rgba(244, 232, 206, 0.12)"
+    : "rgba(62, 48, 30, 0.09)";
+  const codeBorder = dark
+    ? "rgba(244, 232, 206, 0.28)"
+    : "rgba(62, 48, 30, 0.24)";
+
+  // Convert Markdown lines into structured visual lines
+  const rawLines = String(body)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((l, idx, arr) => l.trim().length > 0 || (idx > 0 && idx < arr.length - 1 && arr[idx - 1].trim().length > 0));
+
+  const visualLines = [];
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      visualLines.push({ kind: "hr" });
+      continue;
+    }
+
+    let kind = "p";
+    let indent = 0;
+    let prefix = null;
+    let checked = false;
+    let content = trimmed;
+    let baseRun = {};
+
+    const hMatch = /^(#{1,4})\s+(.*)$/.exec(trimmed);
+    const taskMatch = /^[-*+]\s+\[([ xX])\]\s*(.*)$/.exec(trimmed);
+    const quoteMatch = /^>\s*(.*)$/.exec(trimmed);
+    const bulletMatch = /^[-*+]\s+(.*)$/.exec(trimmed);
+    const orderedMatch = /^(\d+\.)\s+(.*)$/.exec(trimmed);
+
+    if (hMatch) {
+      kind = "heading";
+      content = hMatch[2];
+      baseRun = { heading: true, bold: true };
+    } else if (taskMatch) {
+      kind = "task";
+      checked = taskMatch[1].toLowerCase() === "x";
+      content = taskMatch[2];
+      indent = 34;
+      if (checked) baseRun = { strike: true, muted: true };
+    } else if (quoteMatch) {
+      kind = "quote";
+      content = quoteMatch[1];
+      indent = 24;
+      baseRun = { italic: true, muted: true };
+    } else if (bulletMatch) {
+      kind = "bullet";
+      content = bulletMatch[1];
+      indent = 24;
+      prefix = "•";
+    } else if (orderedMatch) {
+      kind = "ordered";
+      content = orderedMatch[2];
+      indent = 36;
+      prefix = orderedMatch[1];
+    }
+
+    const runs = parseInlineRuns(content, baseRun);
+    const availW = Math.max(80, maxW - indent);
+    let current = [];
+    let currentW = 0;
+    let firstWrap = true;
+
+    const pushCurrent = () => {
+      visualLines.push({
+        kind,
+        indent,
+        prefix: firstWrap ? prefix : null,
+        hasCheckbox: kind === "task" && firstWrap,
+        checked,
+        runs: current,
+      });
+      current = [];
+      currentW = 0;
+      firstWrap = false;
+    };
+
+    for (const run of runs) {
+      ctx.font = runFont(run, baseSize);
+      const padExtra = run.code ? 14 : run.highlight ? 6 : 0;
+      let seg = "";
+      for (const ch of run.text) {
+        const nextW = ctx.measureText(seg + ch).width + padExtra;
+        if (currentW + nextW > availW && (current.length > 0 || seg.length > 0)) {
+          if (seg) {
+            current.push({ ...run, text: seg, w: ctx.measureText(seg).width });
+            seg = "";
+          }
+          pushCurrent();
+        }
+        seg += ch;
+      }
+      if (seg) {
+        const w = ctx.measureText(seg).width;
+        current.push({ ...run, text: seg, w });
+        currentW += w + padExtra;
+      }
+    }
+    if (current.length || kind === "task") {
+      pushCurrent();
+    }
+    if (visualLines.length > maxLines) break;
+  }
+
+  const truncated = visualLines.length > maxLines;
+  const shown = visualLines.slice(0, maxLines);
+
+  shown.forEach((line, idx) => {
+    const baselineY = y + idx * lineH;
+    if (line.kind === "hr") {
+      ctx.save();
+      ctx.strokeStyle = dark ? "rgba(241, 229, 203, 0.28)" : "rgba(68, 56, 40, 0.28)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, baselineY - 10);
+      ctx.lineTo(x + maxW, baselineY - 10);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (line.kind === "quote") {
+      ctx.save();
+      ctx.fillStyle = dark ? "rgba(241, 229, 203, 0.36)" : "rgba(74, 58, 38, 0.34)";
+      ctx.fillRect(x + 2, baselineY - 28, 4, 34);
+      ctx.restore();
+    } else if (line.hasCheckbox) {
+      ctx.save();
+      const bx = x + 2;
+      const by = baselineY - 24;
+      const bs = 22;
+      ctx.strokeStyle = dark ? "#e4d2b4" : "#443c30";
+      ctx.lineWidth = 2.4;
+      ctx.strokeRect(bx, by, bs, bs);
+      if (line.checked) {
+        ctx.fillStyle = dark ? "#e4d2b4" : "#3f372b";
+        ctx.fillRect(bx, by, bs, bs);
+        ctx.strokeStyle = dark ? "#241f18" : "#f5efe2";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(bx + 4, by + 11);
+        ctx.lineTo(bx + 9, by + 17);
+        ctx.lineTo(bx + 18, by + 5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (line.prefix) {
+      ctx.save();
+      ctx.fillStyle = inkMuted;
+      ctx.font = `600 ${Math.round(baseSize * 0.9)}px "PingFang SC", sans-serif`;
+      ctx.fillText(line.prefix, x + 2, baselineY);
+      ctx.restore();
+    }
+
+    let cursorX = x + line.indent;
+    const isLastTruncated = truncated && idx === shown.length - 1;
+
+    line.runs.forEach((run, rIdx) => {
+      const isLastRun = isLastTruncated && rIdx === line.runs.length - 1;
+      const text = isLastRun
+        ? `${run.text.slice(0, Math.max(0, run.text.length - 1))}…`
+        : run.text;
+      ctx.font = runFont(run, baseSize);
+      const textW = ctx.measureText(text).width;
+
+      if (run.highlight) {
+        ctx.save();
+        ctx.fillStyle = highlightBg;
+        ctx.fillRect(cursorX - 2, baselineY - 30, textW + 6, 36);
+        ctx.restore();
+      }
+      if (run.code) {
+        ctx.save();
+        ctx.fillStyle = codeBg;
+        ctx.strokeStyle = codeBorder;
+        ctx.lineWidth = 1.6;
+        ctx.fillRect(cursorX + 1, baselineY - 28, textW + 12, 34);
+        ctx.strokeRect(cursorX + 1, baselineY - 28, textW + 12, 34);
+        ctx.restore();
+        cursorX += 7;
+      }
+
+      ctx.save();
+      ctx.fillStyle = run.muted
+        ? inkMuted
+        : run.heading || run.bold || run.highlight
+          ? inkStrong
+          : inkMain;
+      ctx.fillText(text, cursorX, baselineY);
+
+      if (run.strike) {
+        ctx.strokeStyle = run.muted ? inkMuted : inkMain;
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.moveTo(cursorX, baselineY - 11);
+        ctx.lineTo(cursorX + textW, baselineY - 11);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      cursorX += textW + (run.code ? 9 : run.highlight ? 4 : 0);
+    });
+  });
+}
+
 function hash(s) {
   let h = 0;
   for (const c of String(s ?? "note")) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
@@ -315,32 +601,33 @@ function drawNoteToCanvas(canvas, note, image = null) {
     const titleLines = wrapText(ctx, note.title, width - 104, 1);
     titleLines.forEach((line, i) => ctx.fillText(line, 52, top + i * 54));
     if (note.body && !image) {
-      ctx.fillStyle = dark ? "#e2cfb1" : "#4e4536";
-      ctx.font = '30px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-      wrapText(ctx, note.body.replace(/[#*`>_~]/g, ""), width - 104, 1).forEach(
-        (line) => ctx.fillText(line, 52, top + 44),
-      );
+      drawRichBody(ctx, note.body, {
+        x: 52,
+        y: top + 44,
+        maxW: width - 104,
+        maxLines: 1,
+        lineH: 48,
+        dark,
+      });
     }
   } else {
     ctx.font = '700 52px "Songti SC", "Noto Serif SC", Georgia, "PingFang SC", serif';
     const title = wrapText(ctx, note.title, width - 92, 2);
     title.forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
     top += title.length * 62 + 22;
-    ctx.fillStyle = dark ? "#e4d2b4" : "#443c30";
-    ctx.font = '34px "PingFang SC", "Noto Sans CJK SC", sans-serif';
     const footerReserve = enabledCaps.length > 0 ? 104 : 44;
     const maxLines = Math.max(
       0,
       Math.min(5, Math.floor((height - top - footerReserve) / 56)),
     );
-    const plainBody = String(note.body ?? "")
-      .replace(/^[ \t]*([-*+]|\d+\.|>)\s+/gm, "")
-      .replace(/[#*`>_~]/g, "")
-      .replace(/\n{2,}/g, "\n")
-      .trim();
-    wrapText(ctx, plainBody, width - 98, maxLines).forEach((line, i) =>
-      ctx.fillText(line, 46, top + i * 56),
-    );
+    drawRichBody(ctx, note.body, {
+      x: 46,
+      y: top,
+      maxW: width - 98,
+      maxLines,
+      lineH: 56,
+      dark,
+    });
   }
   ctx.restore();
 

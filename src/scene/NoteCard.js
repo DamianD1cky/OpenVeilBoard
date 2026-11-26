@@ -593,6 +593,7 @@ export class NoteCard {
     u.uBurnGlow.value = 2.8;
     const startP = Math.max(0.02, u.uBurnProgress.value);
     const anim = { p: startP };
+    let snappedLinks = false;
     this.burnAnim = anim;
     gsap.to(anim, {
       p: 1.05,
@@ -600,11 +601,19 @@ export class NoteCard {
       ease: "power1.in",
       onUpdate: () => {
         u.uBurnProgress.value = anim.p;
-        if (anim.p > 0.65 && this.pin.visible) {
+        if (anim.p >= 0.42 && !snappedLinks) {
+          snappedLinks = true;
+          this.ctx.rope?.snapNote?.(this.note.id);
+        }
+        if (anim.p > 0.56 && this.pin.visible) {
           this.pin.visible = false;
         }
       },
       onComplete: () => {
+        if (!snappedLinks) {
+          snappedLinks = true;
+          this.ctx.rope?.snapNote?.(this.note.id);
+        }
         done?.();
       },
     });
