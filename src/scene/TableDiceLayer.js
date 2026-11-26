@@ -234,7 +234,7 @@ export class TableDiceLayer {
       return;
     }
 
-    const scale = Math.min(0.19, layout.indentWidth * 0.08);
+    const scale = Math.min(0.245, layout.indentWidth * 0.104);
     const config = materialPresets[preset] ?? materialPresets.ivory;
 
     // Match existing on-table dice of the same material & sides for tactile in-place reuse
@@ -595,6 +595,44 @@ export class TableDiceLayer {
   }
 
   /**
+   * Compute 3D world-space bounds of the active dice cluster for macro close-up snapshot camera.
+   */
+  getWorldBounds() {
+    if (!this.dice.length) return null;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minZ = Infinity,
+      maxZ = -Infinity,
+      sumY = 0,
+      maxScale = 0;
+    for (const die of this.dice) {
+      const p = die.group.position;
+      const s = Math.max(die.group.scale.x, die.baseScale || 0.15);
+      const r = s * 1.12;
+      minX = Math.min(minX, p.x - r);
+      maxX = Math.max(maxX, p.x + r);
+      minZ = Math.min(minZ, p.z - r);
+      maxZ = Math.max(maxZ, p.z + r);
+      sumY += p.y;
+      maxScale = Math.max(maxScale, s);
+    }
+    if (!Number.isFinite(minX)) return null;
+    return {
+      minX,
+      maxX,
+      minZ,
+      maxZ,
+      centerX: (minX + maxX) * 0.5,
+      centerY: sumY / this.dice.length,
+      centerZ: (minZ + maxZ) * 0.5,
+      spanX: Math.max(0.08, maxX - minX),
+      spanZ: Math.max(0.08, maxZ - minZ),
+      maxScale,
+      count: this.dice.length,
+    };
+  }
+
+  /**
    * Project active tabletop dice into canvas pixel bounds for Polaroid snapshot framing.
    */
   getScreenBounds(camera, canvasW, canvasH) {
@@ -642,7 +680,7 @@ export class TableDiceLayer {
     );
     this.dice = sorted;
     const baseScale = sorted[0].baseScale;
-    const dockScale = Math.min(baseScale * 0.76, layout.indentWidth * 0.044, 0.118);
+    const dockScale = Math.min(baseScale * 0.72, layout.indentWidth * 0.056, 0.155);
     const stepX = dockScale * 2.25;
     const stepZ = dockScale * 2.25;
     const maxCols = Math.max(

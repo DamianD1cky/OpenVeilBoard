@@ -71,10 +71,11 @@ export function FallbackBoard2D({
     shift: boolean;
   } | null>(null);
   const paperSize = (note: Note) => {
-    const width =
+    const base =
       innerWidth <= 700
         ? innerWidth * 0.3
         : Math.max(100, Math.min(190, innerWidth * 0.14));
+    const width = note.cardStyle === "polaroid" ? base * 0.76 : base;
     return { width, height: width / paperAspect(note) };
   };
   const bounds = (note: Note) => {

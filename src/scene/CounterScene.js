@@ -186,16 +186,16 @@ export class CounterScene {
           app.size.width,
           app.size.height,
         );
-        ctx.post.viewerProgress = Math.max(
-          this.blur.value,
-          (this.projection?.lightboxProgress ?? 0) * 0.85,
-        );
-        ctx.post.render(app.scene, app.camera, null);
         if (this.pendingSnapshot) {
           const req = this.pendingSnapshot;
           this.pendingSnapshot = null;
           this.fulfillDiceSnapshot(req);
         }
+        ctx.post.viewerProgress = Math.max(
+          this.blur.value,
+          (this.projection?.lightboxProgress ?? 0) * 0.85,
+        );
+        ctx.post.render(app.scene, app.camera, null);
       }, 1),
     );
     await Promise.all([
@@ -346,64 +346,78 @@ export class CounterScene {
         resolve(null);
         return;
       }
-      const dprX = cw / Math.max(this.app.size.width || cw, 1);
-      const dprY = ch / Math.max(this.app.size.height || ch, 1);
-      const indent = this.getIndentRect();
-      const trayLeft = indent ? Math.max(0, indent.left * dprX) : 0;
-      const trayTop = indent ? Math.max(0, indent.top * dprY) : 0;
-      const trayW = indent
-        ? Math.min(cw - trayLeft, indent.width * dprX)
-        : cw;
-      const trayH = indent
-        ? Math.min(ch - trayTop, indent.height * dprY)
-        : ch;
+      const viewW = Math.max(this.app.size.width || cw, 1);
+      const viewH = Math.max(this.app.size.height || ch, 1);
 
-      const diceBounds = this.dice?.getScreenBounds(this.app.camera, cw, ch);
-      let sx = trayLeft,
-        sy = trayTop,
-        sw = trayW,
-        sh = trayH;
+      let ix = 0,
+        iy = 0,
+        iw = cw,
+        ih = ch;
 
-      if (diceBounds) {
-        const spanW = diceBounds.maxX - diceBounds.minX;
-        const spanH = diceBounds.maxY - diceBounds.minY;
-        const padX = Math.max(spanW * 0.45, trayW * 0.14);
-        const padY = Math.max(spanH * 0.45, trayH * 0.14);
-        let cropW = Math.max(spanW + padX * 2, trayW * 0.36);
-        let cropH = Math.max(spanH + padY * 2, trayH * 0.36);
-        // Aim for a clean 4:3 polaroid framing while keeping all dice inside
+      const worldBounds = this.dice?.getWorldBounds?.();
+      if (worldBounds && this.ctx.post) {
+        // Push a dedicated macro camera close to the dice cluster so the Polaroid
+        // snapshot captures a razor-sharp, full-resolution close-up of the rolled dice!
+        const macroCam = (this.macroCam ??= new PerspectiveCamera(
+          32,
+          viewW / viewH,
+          0.04,
+          40,
+        ));
+        const fov = 32;
+        macroCam.fov = fov;
+        macroCam.aspect = viewW / viewH;
+        macroCam.near = 0.04;
+        macroCam.far = 40;
+
         const targetAspect = 4 / 3;
-        if (cropW / cropH < targetAspect) {
-          cropW = cropH * targetAspect;
-        } else {
-          cropH = cropW / targetAspect;
+        let cropH = ch;
+        let cropW = Math.round(cropH * targetAspect);
+        if (cropW > cw) {
+          cropW = cw;
+          cropH = Math.round(cropW / targetAspect);
         }
-        if (cropW > trayW) {
-          cropW = trayW;
-          cropH = Math.min(trayH, Math.max(spanH + padY, cropW / targetAspect));
-        }
-        if (cropH > trayH) {
-          cropH = trayH;
-          cropW = Math.min(trayW, Math.max(spanW + padX, cropH * targetAspect));
-        }
-        const cx = (diceBounds.minX + diceBounds.maxX) * 0.5;
-        const cy = (diceBounds.minY + diceBounds.maxY) * 0.5;
-        sx = Math.max(
-          trayLeft,
-          Math.min(trayLeft + trayW - cropW, cx - cropW * 0.5),
+        const tanHalfFov = Math.tan(((fov * 0.5) * Math.PI) / 180);
+        const usedVertFrac = cropH / ch;
+        const neededZ = Math.max(
+          worldBounds.spanZ * 1.65,
+          worldBounds.maxScale * 2.8,
         );
-        sy = Math.max(
-          trayTop,
-          Math.min(trayTop + trayH - cropH, cy - cropH * 0.5),
+        const neededX = Math.max(
+          worldBounds.spanX * 1.65,
+          worldBounds.maxScale * 3.7,
         );
-        sw = cropW;
-        sh = cropH;
-      }
+        const distForZ = neededZ / (2 * tanHalfFov * usedVertFrac);
+        const distForX =
+          neededX / (2 * tanHalfFov * usedVertFrac * targetAspect);
+        const dist = Math.max(distForZ, distForX, worldBounds.maxScale * 3.7);
 
-      const ix = Math.max(0, Math.min(cw - 1, Math.round(sx)));
-      const iy = Math.max(0, Math.min(ch - 1, Math.round(sy)));
-      const iw = Math.max(1, Math.min(cw - ix, Math.round(sw)));
-      const ih = Math.max(1, Math.min(ch - iy, Math.round(sh)));
+        macroCam.position.set(
+          worldBounds.centerX,
+          worldBounds.centerY + dist,
+          worldBounds.centerZ + dist * 0.14,
+        );
+        macroCam.up.set(0, 1, 0);
+        macroCam.lookAt(
+          worldBounds.centerX,
+          worldBounds.centerY,
+          worldBounds.centerZ,
+        );
+        macroCam.updateProjectionMatrix();
+        macroCam.updateMatrixWorld(true);
+
+        const prevProg = this.ctx.post.viewerProgress;
+        this.ctx.post.viewerProgress = 0;
+        this.ctx.post.render(this.app.scene, macroCam, null);
+        this.ctx.post.viewerProgress = prevProg;
+
+        ix = Math.max(0, Math.floor((cw - cropW) * 0.5));
+        iy = Math.max(0, Math.floor((ch - cropH) * 0.5));
+        iw = Math.max(1, Math.min(cw - ix, cropW));
+        ih = Math.max(1, Math.min(ch - iy, cropH));
+      } else {
+        this.ctx.post?.render(this.app.scene, this.app.camera, null);
+      }
 
       const device = this.app.renderer?.device;
       const context = this.app.renderer?.context;
@@ -467,7 +481,7 @@ export class CounterScene {
             }
             srcCtx.putImageData(imgData, 0, 0);
 
-            const maxOutW = 1200;
+            const maxOutW = 760;
             const outW = Math.max(320, Math.min(maxOutW, copyW));
             const outH = Math.max(240, Math.round((outW * copyH) / copyW));
             const outCanvas = document.createElement("canvas");

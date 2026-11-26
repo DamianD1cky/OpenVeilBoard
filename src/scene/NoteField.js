@@ -46,7 +46,7 @@ export class NoteField {
     );
     this.off = ctx.counter.subscribe(() => {
       for (const card of this.cards.values())
-        card.update(card.note, this.cardWidth());
+        card.update(card.note, this.cardWidthFor(card.note));
       if (this.avoidZone) this.applyAvoidance(false);
       if (this.archiveMode) this.syncArchiveCards(false);
     });
@@ -55,9 +55,18 @@ export class NoteField {
     const { layout } = this.ctx.counter.get();
     return Math.min(0.94, layout.indentWidth * 0.3, layout.indentHeight * 0.3);
   }
+  cardWidthFor(styleOrNote) {
+    const base = this.cardWidth();
+    const style =
+      typeof styleOrNote === "string"
+        ? styleOrNote
+        : styleOrNote?.cardStyle ?? "note";
+    // Polaroids are tall (0.8 aspect); scale width down so their visual footprint stays compact & balanced
+    return style === "polaroid" ? base * 0.72 : base;
+  }
   freePosition(style, preferred = { x: 0, y: 0 }) {
     const { layout, zone } = this.ctx.counter.get(),
-      width = this.cardWidth(),
+      width = this.cardWidthFor(style),
       height = width / cardAspect(style);
     const others = [...this.cards.values()].map((c) => ({
       id: c.note.id,
@@ -79,9 +88,9 @@ export class NoteField {
       {
         id: "clock",
         x: 0,
-        y: -layout.indentHeight / 2 + 0.26,
-        width: Math.min(1.75, layout.indentWidth * 0.7),
-        height: 0.26,
+        y: -layout.indentHeight / 2 + 0.19,
+        width: Math.min(1.85, layout.indentWidth * 0.72),
+        height: 0.36,
         rotation: 0,
       },
     ];
@@ -112,12 +121,13 @@ export class NoteField {
     const added = [];
     for (const note of active) {
       let card = this.cards.get(note.id);
+      const targetWidth = this.cardWidthFor(note);
       if (!card) {
-        card = new NoteCard(this.ctx, note, this.cardWidth());
+        card = new NoteCard(this.ctx, note, targetWidth);
         this.cards.set(note.id, card);
         this.object.add(card.object);
         added.push(card);
-      } else card.update(note);
+      } else card.update(note, targetWidth);
     }
     if (this.avoidZone) this.applyAvoidance(false);
     if (added.length) {
@@ -239,14 +249,15 @@ export class NoteField {
         (((idx % 2 === 0 ? 1 : -1) * (0.55 + (idx % 3) * 0.35)) * Math.PI) /
         180;
 
+      const itemWidth = note.cardStyle === "polaroid" ? width * 0.8 : width;
       let card = this.archiveCards.get(note.id);
       if (!card) {
-        card = new NoteCard(this.ctx, note, width);
+        card = new NoteCard(this.ctx, note, itemWidth);
         this.archiveCards.set(note.id, card);
         this.object.add(card.object);
         added.push(card);
       } else {
-        card.update(note, width);
+        card.update(note, itemWidth);
       }
       card.setOverridePose({ x, z, yaw });
     });

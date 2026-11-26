@@ -773,7 +773,12 @@ export function Board({
         }
         userId={session.user.id}
         role={room.role}
-        hidden={activeModal || Boolean(quickEdge) || (hoverBlocked && !pinHint)}
+        hidden={
+          activeModal ||
+          Boolean(quickEdge) ||
+          Boolean(result?.result) ||
+          (hoverBlocked && !pinHint)
+        }
         pinHint={pinHint}
         raised={diceDocked}
         indentRect={indentRect}
@@ -1050,13 +1055,26 @@ export function Board({
         </TrayOverlay>
       )}
       {result?.result && !activeModal && !isArchiveView && (
-        <div className="dice-result" role="status">
-          <span>
+        <div
+          className="dice-result"
+          role="status"
+          style={
+            indentRect
+              ? {
+                  left: `${indentRect.left + Math.round(indentRect.width * 0.5)}px`,
+                  bottom: `${Math.max(20, window.innerHeight - (indentRect.top + indentRect.height) + 22)}px`,
+                }
+              : undefined
+          }
+        >
+          <span className="dice-result-readout">
             {result.label && `${result.label} · `}
             {result.notation} = <strong>{result.result.total}</strong>
           </span>
+          <i className="dice-result-sep" aria-hidden="true" />
           {room.role !== "observer" && (
             <button
+              type="button"
               disabled={savingRollNote}
               onClick={() => void saveRollAsPolaroid(result)}
             >
@@ -1064,6 +1082,7 @@ export function Board({
             </button>
           )}
           <button
+            type="button"
             onClick={() => {
               setResult(null);
               scene?.dice.tidyToCorner();
