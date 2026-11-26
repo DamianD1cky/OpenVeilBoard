@@ -116,6 +116,7 @@ export function Board({
     [quickDir, setQuickDir] = useState<EdgeDirection>("none"),
     [hovered, setHovered] = useState<string | null>(null),
     [pinHovered, setPinHovered] = useState<string | null>(null),
+    [archivePullId, setArchivePullId] = useState<string | null>(null),
     [linkStart, setLinkStart] = useState<string | null>(null);
   const [error, setError] = useState(""),
     [formula, setFormula] = useState("1d20"),
@@ -393,12 +394,21 @@ export function Board({
     onMove: (id, point) => safe(store.patch(id, point)),
     onArchive: (id) =>
       safe(store.patch(id, { archivedAt: new Date().toISOString() })),
+    onRestore: (id) => safe(store.patch(id, { archivedAt: null })),
     onOpenArchive: () => {
       setOverlay(null);
       setEdge(null);
       setRoomMenu(false);
       setHovered(null);
       navigateBoard("/archive");
+    },
+    onCloseArchive: () => {
+      setHovered(null);
+      setArchivePullId(null);
+      navigateBoard("/");
+    },
+    onArchivePull: (id) => {
+      setArchivePullId(id);
     },
     onClock: () => {
       onCloseAccount?.();
@@ -470,8 +480,13 @@ export function Board({
   useEffect(() => {
     scene?.sync(state);
   }, [scene, state.notes, state.edges, state.clock]);
+  const isArchiveView = route.kind === "archive";
   const activeModal = Boolean(
-    route.kind !== "home" || overlay || edge || roomMenu || accountOpen,
+    (route.kind !== "home" && !isArchiveView) ||
+      overlay ||
+      edge ||
+      roomMenu ||
+      accountOpen,
   );
   const activeAvoidZone = useMemo(() => {
     if (route.kind !== "home") return null;
@@ -540,19 +555,26 @@ export function Board({
     else setResult(state.roll);
   }, [state.roll, scene, material]);
   const hoverNote = state.notes.find((n) => n.id === hovered) ?? null;
+  const pullNote = archivePullId
+    ? (state.notes.find((n) => n.id === archivePullId) ?? null)
+    : null;
   const linkStartNote = linkStart
     ? (state.notes.find((n) => n.id === linkStart) ?? null)
     : null;
   const pinHoverNote = pinHovered
     ? (state.notes.find((n) => n.id === pinHovered) ?? null)
     : null;
-  const pinHint = linkStartNote
-    ? pinHoverNote && pinHoverNote.id !== linkStartNote.id
-      ? `点击系牢至「${pinHoverNote.title}」 · Esc 取消`
-      : `已系住「${linkStartNote.title}」图钉 · 点击另一枚图钉连线 · Esc 取消`
-    : pinHoverNote
-      ? `点击「${pinHoverNote.title}」图钉连线`
-      : null;
+  const pinHint = pullNote
+    ? `松手将「${pullNote.title}」放回台面`
+    : isArchiveView && hoverNote
+      ? `${hoverNote.title} · 点击检视${room.role !== "observer" && (hoverNote.authorId === session.user.id || room.role === "gm") ? " · 右键或拖出放回台面" : ""}`
+      : linkStartNote
+        ? pinHoverNote && pinHoverNote.id !== linkStartNote.id
+          ? `点击系牢至「${pinHoverNote.title}」 · Esc 取消`
+          : `已系住「${linkStartNote.title}」图钉 · 点击另一枚图钉连线 · Esc 取消`
+        : pinHoverNote
+          ? `点击「${pinHoverNote.title}」图钉连线`
+          : null;
   const selectedId = route.kind === "note" ? route.noteId : null;
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
@@ -840,7 +862,7 @@ export function Board({
           </form>
         </div>
       )}
-      {hoveredDice && !activeModal && diceDocked && (
+      {hoveredDice && !activeModal && !isArchiveView && diceDocked && (
         <div className="dice-dock-hint" style={dockHintStyle} role="status">
           <strong>
             点击重投 · {hoveredDice.label ? `${hoveredDice.label} ` : ""}
@@ -908,6 +930,7 @@ export function Board({
         <ArchiveDrawer
           notes={state.notes}
           store={store}
+          scene={scene}
           userId={session.user.id}
           role={room.role}
           onClose={close}
@@ -1026,7 +1049,7 @@ export function Board({
           </form>
         </TrayOverlay>
       )}
-      {result?.result && !activeModal && (
+      {result?.result && !activeModal && !isArchiveView && (
         <div className="dice-result" role="status">
           <span>
             {result.label && `${result.label} · `}

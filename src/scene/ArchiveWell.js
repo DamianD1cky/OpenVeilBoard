@@ -69,12 +69,26 @@ export class ArchiveWell {
 
     this.cue = new DropDockCue(ctx, { zone, floorY, active: false });
     ctx.app.scene.add(this.cue.object);
+    this.archiveMode = false;
+    this.lastArchivedNotes = [];
     this.setArchived([]);
   }
+  setArchiveMode(active) {
+    const next = Boolean(active);
+    if (this.archiveMode === next) return;
+    this.archiveMode = next;
+    this.setArchived(this.lastArchivedNotes);
+  }
   setArchived(archivedNotes = []) {
+    this.lastArchivedNotes = archivedNotes;
     const count = archivedNotes.length;
     const ink = this.ctx.surfaceInk?.wellInk ?? "#655d4c";
-    this.stamp.draw(`便签盒 · ${String(count).padStart(2, "0")}`, ink);
+    this.stamp.draw(
+      this.archiveMode
+        ? "← 返回台面"
+        : `便签盒 · ${String(count).padStart(2, "0")}`,
+      ink,
+    );
     if (!count) {
       this.preview.visible = false;
       this.previewKey = null;

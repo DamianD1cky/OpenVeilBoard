@@ -523,6 +523,9 @@ export class CounterScene {
     if (this.clock?.object) this.clock.object.visible = !this.routeActive;
     this.eventClock?.setRouteHidden(this.routeActive);
   }
+  setArchiveView(active, visibleIds = null) {
+    this.field?.setArchiveView(active, visibleIds);
+  }
   setUI(active, inspect = false, blur = inspect) {
     this.field.enabled = active && !inspect;
     this.blurTarget = blur ? 0.45 : 0;

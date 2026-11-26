@@ -15,7 +15,10 @@ export interface BoardCallbacks {
   onPointerDown: () => void;
   onMove: (id: string, point: { x: number; y: number }) => void;
   onArchive: (id: string) => void;
+  onRestore?: (id: string) => void;
   onOpenArchive: () => void;
+  onCloseArchive?: () => void;
+  onArchivePull?: (id: string | null) => void;
   onClock: () => void;
   onEdge?: (edge: NoteEdge) => void;
   onBlank: () => void;

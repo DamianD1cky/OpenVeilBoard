@@ -80,6 +80,7 @@ export class NoteCard {
     this._pinWorld = new Vector3();
     this.aim = { x: 0, z: 0, lift: 0, tilt: 0, scale: 1, yaw: 0 };
     this.avoid = { x: 0, z: 0, yaw: 0 };
+    this.overridePose = null;
     this.pulseUntil = 0;
     this.archiving = false;
     this.swept = false;
@@ -162,32 +163,43 @@ export class NoteCard {
   wakeLinks() {
     this.ctx.rope?.wakeNote(this.note.id);
   }
+  setOverridePose(pose) {
+    this.overridePose = pose ?? null;
+    if (!this.dragging) this.place();
+  }
   place() {
     const previousX = this.aim.x,
       previousZ = this.aim.z;
     const previousY = this.floor,
       previousYaw = this.object.rotation.y;
     const { layout, floorY } = this.ctx.counter.get();
-    const angle = (this.note.rotation * Math.PI) / 180;
-    const halfX =
-      (Math.abs(Math.cos(angle)) * this.width) / 2 +
-      (Math.abs(Math.sin(angle)) * this.height) / 2;
-    const halfZ =
-      (Math.abs(Math.sin(angle)) * this.width) / 2 +
-      (Math.abs(Math.cos(angle)) * this.height) / 2;
-    const boundX = layout.indentWidth / 2 - halfX - 0.015,
-      boundZ = layout.indentHeight / 2 - halfZ - 0.015;
-    this.aim.x = Math.max(
-      -boundX,
-      Math.min(boundX, this.note.x * layout.indentWidth),
-    );
-    this.aim.z = Math.max(
-      -boundZ,
-      Math.min(boundZ, this.note.y * layout.indentHeight),
-    );
-    const baseYaw = (-this.note.rotation * Math.PI) / 180;
+    if (this.overridePose) {
+      this.aim.x = this.overridePose.x;
+      this.aim.z = this.overridePose.z;
+    } else {
+      const angle = (this.note.rotation * Math.PI) / 180;
+      const halfX =
+        (Math.abs(Math.cos(angle)) * this.width) / 2 +
+        (Math.abs(Math.sin(angle)) * this.height) / 2;
+      const halfZ =
+        (Math.abs(Math.sin(angle)) * this.width) / 2 +
+        (Math.abs(Math.cos(angle)) * this.height) / 2;
+      const boundX = layout.indentWidth / 2 - halfX - 0.015,
+        boundZ = layout.indentHeight / 2 - halfZ - 0.015;
+      this.aim.x = Math.max(
+        -boundX,
+        Math.min(boundX, this.note.x * layout.indentWidth),
+      );
+      this.aim.z = Math.max(
+        -boundZ,
+        Math.min(boundZ, this.note.y * layout.indentHeight),
+      );
+    }
+    const baseYaw = this.overridePose
+      ? this.overridePose.yaw
+      : (-this.note.rotation * Math.PI) / 180;
     this.aim.yaw = this.hovered ? baseYaw * 0.65 : baseYaw;
-    this.aim.scale = this.hovered ? 1.065 : 1;
+    this.aim.scale = this.hovered ? 1.055 : 1;
     this.floor = floorY + 0.012 + Math.min(this.note.layer, 100) * 0.0002;
     if (
       this.aim.x !== previousX ||
@@ -226,7 +238,9 @@ export class NoteCard {
     this.wakeLinks();
     this.aim.lift = on ? 0.014 : 0;
     this.aim.scale = on ? 1.055 : 1;
-    const baseYaw = (-this.note.rotation * Math.PI) / 180;
+    const baseYaw = this.overridePose
+      ? this.overridePose.yaw
+      : (-this.note.rotation * Math.PI) / 180;
     this.aim.yaw = on ? baseYaw * 0.65 : baseYaw;
     this.wakeWiggle();
   }
@@ -271,7 +285,9 @@ export class NoteCard {
       this.aim.lift = 0.022;
       this.aim.tilt = -0.022;
       this.aim.scale = 1.03;
-      this.aim.yaw = (-this.note.rotation * Math.PI) / 180;
+      this.aim.yaw = this.overridePose
+        ? this.overridePose.yaw
+        : (-this.note.rotation * Math.PI) / 180;
     }
     this.wakeWiggle();
   }
@@ -281,7 +297,9 @@ export class NoteCard {
     this.aim.lift = 0;
     this.aim.tilt = 0;
     this.aim.scale = 1;
-    this.aim.yaw = (-this.note.rotation * Math.PI) / 180;
+    this.aim.yaw = this.overridePose
+      ? this.overridePose.yaw
+      : (-this.note.rotation * Math.PI) / 180;
     this.wakeWiggle();
   }
   pulse() {
@@ -417,6 +435,59 @@ export class NoteCard {
         this.swept = false;
         this.wakeWiggle();
         this.wakeLinks();
+      },
+    });
+  }
+  enterFromWell(wellX, wellZ, delaySec = 0) {
+    this.printing = true;
+    this.swept = false;
+    gsap.killTweensOf(this.object.position);
+    gsap.killTweensOf(this.object.scale);
+    gsap.killTweensOf(this.object.rotation);
+    this.object.position.set(wellX, this.floor + 0.04, wellZ);
+    this.object.scale.setScalar(0.32);
+    this.object.rotation.set(0, 0, 0);
+    this.resetWiggle();
+    gsap.to(this.object.position, {
+      x: this.aim.x,
+      z: this.aim.z,
+      y: this.floor,
+      duration: whenMotion(0.56),
+      delay: whenMotion(delaySec),
+      ease: "power3.out",
+      onComplete: () => {
+        this.printing = false;
+        this.wakeWiggle();
+      },
+    });
+    gsap.to(this.object.scale, {
+      x: 1,
+      y: 1,
+      z: 1,
+      duration: whenMotion(0.52),
+      delay: whenMotion(delaySec),
+      ease: "power3.out",
+    });
+    gsap.to(this.object.rotation, {
+      y: this.aim.yaw,
+      duration: whenMotion(0.52),
+      delay: whenMotion(delaySec),
+      ease: "power3.out",
+    });
+  }
+  returnToDesk(exitX, done) {
+    this.printing = true;
+    this.archiving = true;
+    gsap.killTweensOf(this.object.position);
+    gsap.killTweensOf(this.object.scale);
+    gsap.to(this.object.position, {
+      x: exitX,
+      y: this.floor + 0.14,
+      duration: whenMotion(0.42),
+      ease: "power2.in",
+      onComplete: () => {
+        this.archiving = false;
+        done?.();
       },
     });
   }

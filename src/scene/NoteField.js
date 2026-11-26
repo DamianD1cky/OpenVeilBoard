@@ -24,6 +24,9 @@ export class NoteField {
     this.linkStartId = null;
     this.hoveredPinCard = null;
     this.lastPointerPoint = null;
+    this.archiveMode = false;
+    this.archiveCards = new Map();
+    this.archiveVisibleIds = null;
     this.canvas = ctx.app.canvas;
     this.handlers = {
       pointerdown: (e) => this.down(e),
@@ -45,6 +48,7 @@ export class NoteField {
       for (const card of this.cards.values())
         card.update(card.note, this.cardWidth());
       if (this.avoidZone) this.applyAvoidance(false);
+      if (this.archiveMode) this.syncArchiveCards(false);
     });
   }
   cardWidth() {
@@ -140,6 +144,146 @@ export class NoteField {
         });
       }
     }
+    if (this.archiveMode) this.syncArchiveCards(false);
+  }
+  setArchiveView(active, visibleIds = null) {
+    const next = Boolean(active);
+    const wasActive = this.archiveMode;
+    this.archiveMode = next;
+    this.archiveVisibleIds = Array.isArray(visibleIds) ? visibleIds : null;
+    this.ctx.counterObject.well?.setArchiveMode?.(next);
+    if (!next) {
+      if (this.hovered && this.archiveCards.has(this.hovered.note?.id)) {
+        this.hovered.setHover(false);
+        this.hovered = null;
+        this.callbacks.onHover?.(null);
+      }
+      this.callbacks.onArchivePull?.(null);
+      for (const card of this.archiveCards.values()) card.dispose();
+      this.archiveCards.clear();
+      return;
+    }
+    this.setHoveredPin(null);
+    this.setLinkStart(null);
+    this.syncArchiveCards(!wasActive);
+  }
+  syncArchiveCards(animateFromWell = false) {
+    const { layout, zone } = this.ctx.counter.get();
+    if (!layout) return;
+    const allArchived = (this.notes ?? []).filter((n) => n.archivedAt);
+    const byId = new Map(allArchived.map((n) => [n.id, n]));
+    let list;
+    if (this.archiveVisibleIds) {
+      list = this.archiveVisibleIds.map((id) => byId.get(id)).filter(Boolean);
+    } else {
+      list = [...allArchived]
+        .sort(
+          (a, b) =>
+            new Date(b.archivedAt || 0).getTime() -
+            new Date(a.archivedAt || 0).getTime(),
+        )
+        .slice(0, 8);
+    }
+    const keepIds = new Set(list.map((n) => n.id));
+    for (const [id, card] of this.archiveCards) {
+      if (!keepIds.has(id) && !card.archiving) {
+        if (this.hovered === card) {
+          this.hovered = null;
+          this.callbacks.onHover?.(null);
+        }
+        card.dispose();
+        this.archiveCards.delete(id);
+      }
+    }
+    if (!list.length) return;
+
+    const compact = layout.indentWidth < 1.35;
+    const maxCols = compact ? 2 : 4;
+    const cols = Math.min(maxCols, Math.max(1, list.length));
+    const rows = Math.ceil(list.length / cols);
+    const availW = layout.indentWidth * 0.86;
+    const topBound = -layout.indentHeight * 0.5 + Math.max(0.22, layout.indentHeight * 0.16);
+    const bottomBound = Math.min(
+      layout.indentHeight * 0.5 - 0.14,
+      zone ? zone.z - zone.height * 0.5 - 0.045 : layout.indentHeight * 0.5 - 0.14,
+    );
+    const availH = Math.max(0.38, bottomBound - topBound);
+    const maxColW = (availW / cols) * 0.84;
+    const minAspect = list.reduce(
+      (acc, n) => Math.min(acc, cardAspect(n)),
+      1.2,
+    );
+    const maxRowW = ((availH / rows) * 0.84) * minAspect;
+    const width = Math.max(
+      0.16,
+      Math.min(this.cardWidth() * 0.88, maxColW, maxRowW),
+    );
+
+    const added = [];
+    const colSpacing = Math.min(availW / cols, width * 1.24);
+    const rowSpacing = rows > 1 ? availH / rows : 0;
+    const centerZ = (topBound + bottomBound) * 0.5;
+
+    list.forEach((note, idx) => {
+      const row = Math.floor(idx / cols);
+      const col = idx % cols;
+      const itemsInRow =
+        row === rows - 1 ? list.length - row * cols : cols;
+      const rowStartX = -((itemsInRow - 1) * colSpacing) * 0.5;
+      const x = rowStartX + col * colSpacing;
+      const z =
+        rows === 1
+          ? centerZ
+          : topBound + rowSpacing * (row + 0.5);
+      const yaw =
+        (((idx % 2 === 0 ? 1 : -1) * (0.55 + (idx % 3) * 0.35)) * Math.PI) /
+        180;
+
+      let card = this.archiveCards.get(note.id);
+      if (!card) {
+        card = new NoteCard(this.ctx, note, width);
+        this.archiveCards.set(note.id, card);
+        this.object.add(card.object);
+        added.push(card);
+      } else {
+        card.update(note, width);
+      }
+      card.setOverridePose({ x, z, yaw });
+    });
+
+    if (added.length) {
+      const originX = zone?.x ?? layout.indentWidth * 0.36;
+      const originZ = zone?.z ?? layout.indentHeight * 0.36;
+      if (animateFromWell) {
+        playSound("polaroid.shuffle", { pan: 0.25 });
+      }
+      added.forEach((card, i) => {
+        card.enterFromWell(
+          originX,
+          originZ,
+          animateFromWell ? Math.min(i, 7) * 0.045 : 0,
+        );
+      });
+    }
+  }
+  restoreArchiveCard(card) {
+    if (!card || card.archiving) return;
+    if (!this.callbacks.canEdit?.(card.note)) return;
+    const { layout } = this.ctx.counter.get();
+    const exitX = layout
+      ? -layout.indentWidth * 0.5 - card.width * 1.4
+      : -2.4;
+    if (this.hovered === card) {
+      this.hovered = null;
+      this.callbacks.onHover?.(null);
+    }
+    this.callbacks.onArchivePull?.(null);
+    playSound("polaroid.shuffle", { pan: -0.3 });
+    card.returnToDesk(exitX, () => {
+      card.dispose();
+      this.archiveCards.delete(card.note.id);
+      this.callbacks.onRestore?.(card.note.id);
+    });
   }
   setAvoidanceZone(zone) {
     this.avoidZone = zone ?? null;
@@ -245,10 +389,12 @@ export class NoteField {
   }
   at(point) {
     if (!point) return null;
+    const pool = this.archiveMode ? this.archiveCards : this.cards;
     return (
-      [...this.cards.values()]
+      [...pool.values()]
         .sort((a, b) => b.note.layer - a.note.layer)
         .find((c) => {
+          if (c.archiving || c.burningAway) return false;
           const dx = point.x - c.object.position.x,
             dz = point.z - c.object.position.z,
             yaw = c.object.rotation.y;
@@ -298,16 +444,18 @@ export class NoteField {
       ? null
       : point && this.ctx.counterObject.well?.contains(point)
         ? { kind: "well", point }
-        : point && this.ctx.clock?.contains(point)
-          ? { kind: "clock" }
-          : point && this.ctx.dice?.containsDocked?.(point)
-            ? { kind: "dice" }
-            : point
-              ? (() => {
-                  const edge = this.ctx.rope?.at(point);
-                  return edge ? { kind: "edge", edge } : null;
-                })()
-              : null;
+        : this.archiveMode
+          ? null
+          : point && this.ctx.clock?.contains(point)
+            ? { kind: "clock" }
+            : point && this.ctx.dice?.containsDocked?.(point)
+              ? { kind: "dice" }
+              : point
+                ? (() => {
+                    const edge = this.ctx.rope?.at(point);
+                    return edge ? { kind: "edge", edge } : null;
+                  })()
+                : null;
     this.ctx.clock?.setHover?.(hoverTarget?.kind === "clock");
     const nextDiceHover =
       hoverTarget?.kind === "dice" && (this.callbacks.canRoll?.() ?? true);
@@ -356,7 +504,7 @@ export class NoteField {
     const point = this.point(e);
     if (!point) return;
     this.lastPointerPoint = point.clone();
-    const canLink = this.callbacks.canLink?.() ?? true;
+    const canLink = !this.archiveMode && (this.callbacks.canLink?.() ?? true);
     const pinCard = canLink ? this.pinAt(point) : null;
     const card = pinCard ?? this.at(point);
     this.callbacks.onPointerDown?.();
@@ -394,7 +542,7 @@ export class NoteField {
     this.lastPointerPoint = point.clone();
     const down = this.downState;
     if (!down) {
-      const canLink = this.callbacks.canLink?.() ?? true;
+      const canLink = !this.archiveMode && (this.callbacks.canLink?.() ?? true);
       if (this.linkStartId && canLink) {
         const pinCard = this.pinAt(point);
         const card = this.at(point);
@@ -456,6 +604,17 @@ export class NoteField {
         point.z + down.offsetZ,
       ),
     );
+    if (this.archiveMode) {
+      down.card.dragTo(x, z, { latched: false, zone: null });
+      const pose = down.card.overridePose;
+      const pulledOut = pose
+        ? Math.hypot(x - pose.x, z - pose.z) > 0.18
+        : false;
+      down.archivePulled = pulledOut;
+      this.callbacks.onArchivePull?.(pulledOut ? down.card.note.id : null);
+      this.canvas.style.cursor = "grabbing";
+      return;
+    }
     updateDropMagnet(this.magnet, x, z, zone);
     down.card.dragTo(this.magnet.x, this.magnet.z, {
       latched: this.magnet.latched,
@@ -473,6 +632,19 @@ export class NoteField {
     if (point) this.lastPointerPoint = point.clone();
     this.ctx.counterObject.well?.highlight(false);
     if (card && down.moved && card.dragging) {
+      if (this.archiveMode) {
+        this.callbacks.onArchivePull?.(null);
+        if (down.archivePulled) {
+          card.release();
+          this.restoreArchiveCard(card);
+        } else {
+          card.release();
+          card.place();
+          playSound("polaroid.drop", { pan: panForClientX(e.clientX) });
+        }
+        this.releaseCapture();
+        return;
+      }
       const { layout, zone } = this.ctx.counter.get();
       if (this.magnet.latched) {
         card.release();
@@ -512,7 +684,11 @@ export class NoteField {
         playSound("polaroid.drop", { pan: panForClientX(e.clientX) });
       }
     } else if (!down.moved) {
-      if (this.linkStartId) {
+      if (this.archiveMode) {
+        if (card) this.callbacks.onSelect?.(card.note.id);
+        else if (point && this.ctx.counterObject.well?.contains(point))
+          this.callbacks.onCloseArchive?.();
+      } else if (this.linkStartId) {
         const target = down.pinCard ?? card;
         if (target && target.note.id !== this.linkStartId) {
           this.callbacks.onPinClick?.(target.note.id);
@@ -545,6 +721,14 @@ export class NoteField {
   contextMenu(e) {
     if (!this.enabled) return;
     const point = this.point(e);
+    if (this.archiveMode) {
+      const card = point ? this.at(point) : null;
+      if (card && (this.callbacks.canEdit?.(card.note) ?? false)) {
+        e.preventDefault();
+        this.restoreArchiveCard(card);
+      }
+      return;
+    }
     if (
       point &&
       !this.at(point) &&
@@ -576,6 +760,8 @@ export class NoteField {
       this.canvas.removeEventListener(key, handler),
     );
     this.cards.forEach((c) => c.dispose());
+    this.archiveCards.forEach((c) => c.dispose());
+    this.archiveCards.clear();
     this.object.removeFromParent();
   }
 }
