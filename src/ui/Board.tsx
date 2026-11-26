@@ -577,7 +577,10 @@ export function Board({
           scene={scene}
           indentRect={indentRect}
           hidden={Boolean(
-            overlay === "clock" || overlay === "surface" || accountOpen,
+            overlay === "clock" ||
+              overlay === "surface" ||
+              overlay === "dice" ||
+              accountOpen,
           )}
           onStepClock={stepEventClock}
           onPromotePrimary={promotePrimaryClock}
