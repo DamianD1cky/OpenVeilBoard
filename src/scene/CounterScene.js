@@ -7,9 +7,15 @@ import {
   Vector3,
 } from "../engine/index.js";
 import { applyCamera, restPose } from "../features/opening/intro.js";
+import { gsap, whenMotion } from "../shared/motion.js";
 import { SceneApp } from "./runtime/app.js";
 import { createStore } from "./runtime/store.js";
 import { FACTORY_DEFAULTS } from "./sceneControlDefaults.js";
+import {
+  computeLightingRig,
+  loadLastLighting,
+  resolveLightingState,
+} from "./lightingPresets.js";
 import { Gobo } from "./gobo.js";
 import { ScenePost, objectData } from "./post.js";
 import { createPMREM, loadGainMap } from "../engine/pmrem.js";
@@ -69,7 +75,8 @@ export class CounterScene {
   async init() {
     const { app, ctx } = this,
       c = ctx.controls;
-    app.scene.add(new AmbientLight(c.ambient.color, c.ambient.intensity));
+    this.ambientLight = new AmbientLight(c.ambient.color, c.ambient.intensity);
+    app.scene.add(this.ambientLight);
     const target = new Object3D();
     app.scene.add(target);
     const key = new DirectionalLight(c.key.color, c.key.intensity);
@@ -89,11 +96,13 @@ export class CounterScene {
     key.shadow.bias = 0.00003;
     key.shadow.normalBias = 0.0015;
     app.scene.add(key);
+    this.keyLight = key;
     app.scene.userData.keyLight = key;
     app.scene.userData.keyShadowNode = key;
     const fill = new DirectionalLight(c.fill.color, c.fill.intensity);
     fill.position.set(c.fill.x, c.fill.y, c.fill.z);
     app.scene.add(fill);
+    this.fillLight = fill;
     ctx.gobo = new Gobo(app.renderer);
     ctx.gobo.configure(c, app.size);
     this.cleanups.push(
@@ -142,6 +151,9 @@ export class CounterScene {
     this.opening = new Opening(ctx);
     this.dust = new DustField(ctx);
     if (this.dust.object) app.scene.add(this.dust.object);
+    this.lightingState = resolveLightingState(loadLastLighting());
+    this.lightingTween = null;
+    this.applyLightingRig(computeLightingRig(this.lightingState));
     this.blur = { value: 0 };
     this.blurTarget = 0;
     const budget = createRenderBudget({
@@ -206,6 +218,8 @@ export class CounterScene {
         app.scene.environmentIntensity = c.environment.intensity;
       }),
     ]);
+    // Re-apply after async gobo texture load so pattern & softness take effect on Flora 11
+    this.applyLightingRig(computeLightingRig(this.lightingState));
     app.renderer.device.lost.then(() => {
       if (!this.disposed) this.callbacks.onLost?.();
     });
@@ -314,6 +328,134 @@ export class CounterScene {
   }
   setSurfaceTheme(theme) {
     return this.counter?.setSurfaceTheme(theme);
+  }
+  applyLightingRig(rig) {
+    const { app, ctx } = this;
+    const c = ctx.controls;
+    if (this.keyLight) {
+      this.keyLight.position.set(rig.key.x, rig.key.y, rig.key.z);
+      this.keyLight.color.set(rig.key.color);
+      this.keyLight.intensity = rig.key.intensity;
+    }
+    if (this.fillLight) {
+      this.fillLight.position.set(rig.fill.x, rig.fill.y, rig.fill.z);
+      this.fillLight.color.set(rig.fill.color);
+      this.fillLight.intensity = rig.fill.intensity;
+    }
+    if (this.ambientLight) {
+      this.ambientLight.color.set(rig.ambient.color);
+      this.ambientLight.intensity = rig.ambient.intensity;
+    }
+    c.key.x = rig.key.x;
+    c.key.y = rig.key.y;
+    c.key.z = rig.key.z;
+    c.key.color = rig.key.color;
+    c.key.intensity = rig.key.intensity;
+    c.fill.x = rig.fill.x;
+    c.fill.y = rig.fill.y;
+    c.fill.z = rig.fill.z;
+    c.fill.color = rig.fill.color;
+    c.fill.intensity = rig.fill.intensity;
+    c.ambient.color = rig.ambient.color;
+    c.ambient.intensity = rig.ambient.intensity;
+    c.environment.intensity = rig.environment.intensity;
+    app.scene.environmentIntensity = rig.environment.intensity;
+    app.renderer.exposure = rig.post.exposure;
+    if (ctx.post?.bloom) {
+      ctx.post.bloom.strength = rig.post.bloomStrength;
+    }
+    if (ctx.gobo) {
+      c.gobo.pattern = rig.gobo.pattern;
+      c.gobo.enabled = rig.gobo.enabled;
+      c.gobo.opacity = rig.gobo.opacity;
+      c.gobo.downOpacity = rig.gobo.downOpacity;
+      c.gobo.soft = rig.gobo.soft;
+      c.gobo.sway = rig.gobo.sway;
+      c.gobo.speed = rig.gobo.speed;
+      c.gobo.color = rig.gobo.color;
+      ctx.gobo.setPattern(rig.gobo.pattern);
+      ctx.gobo.setClouds(rig.gobo.clouds, rig.gobo.cloudDepth);
+      ctx.gobo.configure(c, app.size);
+    }
+    this.dust?.setOptions(rig.dust);
+  }
+  setLighting(nextLighting, { immediate = false } = {}) {
+    const target = resolveLightingState(nextLighting);
+    const prev = this.lightingState ?? target;
+    this.lightingState = target;
+    this.lightingTween?.kill?.();
+    this.lightingTween = null;
+
+    const dur = immediate ? 0 : whenMotion(0.68);
+    if (dur <= 0) {
+      this.applyLightingRig(computeLightingRig(target));
+      return;
+    }
+
+    // Shortest-arc azimuth interpolation
+    let deltaAz = ((target.azimuth - prev.azimuth + 540) % 360) - 180;
+    const proxy = {
+      t: 0,
+      azimuth: prev.azimuth,
+      elevation: prev.elevation,
+      warmth: prev.warmth,
+      brightness: prev.brightness,
+      contrast: prev.contrast,
+      goboOpacity: prev.goboOpacity,
+      goboSoft: prev.goboSoft,
+      goboSway: prev.goboSway,
+    };
+    const startPattern = prev.goboPattern;
+    const endPattern = target.goboPattern;
+    const patternChanged = startPattern !== endPattern;
+
+    this.lightingTween = gsap.to(proxy, {
+      t: 1,
+      azimuth: prev.azimuth + deltaAz,
+      elevation: target.elevation,
+      warmth: target.warmth,
+      brightness: target.brightness,
+      contrast: target.contrast,
+      goboOpacity: target.goboOpacity,
+      goboSoft: target.goboSoft,
+      goboSway: target.goboSway,
+      duration: dur,
+      ease: "power2.out",
+      onUpdate: () => {
+        // Crossfade opacity smoothly around midpoint if switching gobo mask pattern
+        let activePattern = endPattern;
+        let opacity = proxy.goboOpacity;
+        if (patternChanged) {
+          if (proxy.t < 0.45) {
+            activePattern = startPattern;
+            opacity = prev.goboOpacity * (1 - proxy.t / 0.45);
+          } else {
+            activePattern = endPattern;
+            opacity = target.goboOpacity * Math.min(1, (proxy.t - 0.45) / 0.55);
+          }
+        }
+        this.applyLightingRig(
+          computeLightingRig({
+            presetId: target.presetId,
+            azimuth: proxy.azimuth,
+            elevation: proxy.elevation,
+            warmth: proxy.warmth,
+            brightness: proxy.brightness,
+            contrast: proxy.contrast,
+            goboPattern: activePattern,
+            goboOpacity: opacity,
+            goboSoft: proxy.goboSoft,
+            goboSway: proxy.goboSway,
+            dustEnabled: target.dustEnabled,
+            clouds: target.clouds,
+          }),
+        );
+      },
+      onComplete: () => {
+        this.lightingTween = null;
+        this.applyLightingRig(computeLightingRig(target));
+      },
+    });
   }
   setAvoidanceZone(zone) {
     this.field?.setAvoidanceZone(zone);
@@ -565,6 +707,20 @@ export class CounterScene {
         trayId: this.counter?.theme?.trayId ?? null,
         appliedKey: this.counter?.appliedThemeKey ?? null,
       },
+      lighting: {
+        ...(this.lightingState ?? {}),
+        goboPatternActual: this.ctx.gobo?.pattern ?? null,
+        goboSoftActual: this.ctx.gobo?.soft ?? null,
+        cloudsActive: Boolean(this.ctx.gobo?.cloudsEnabled),
+        exposure: this.app.renderer?.exposure ?? null,
+        keyPos: this.keyLight
+          ? [
+              Number(this.keyLight.position.x.toFixed(2)),
+              Number(this.keyLight.position.y.toFixed(2)),
+              Number(this.keyLight.position.z.toFixed(2)),
+            ]
+          : null,
+      },
       ropes: { count: this.rope.links.size, ...this.rope.stats },
       dice: { ...this.dice.stats, exiting: this.dice.exiting.size },
       archive: project(new Vector3(zone.x, floorY, zone.z)),
@@ -584,6 +740,8 @@ export class CounterScene {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.lightingTween?.kill?.();
+    this.lightingTween = null;
     this.cleanups.forEach((fn) => fn());
     this.dice?.dispose();
     this.projection?.dispose();

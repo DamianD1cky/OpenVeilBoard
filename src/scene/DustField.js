@@ -105,15 +105,15 @@ export class DustField {
   constructor(ctx) {
     this.ctx = ctx;
     const dust = ctx.controls.dust ?? FACTORY_DEFAULTS.dust;
-    const reduceMotion = prefersReducedMotion();
+    this.reduceMotion = prefersReducedMotion();
     const block = {
       dustOpacity: uniform(dust.opacity),
       dustSize: uniform(dust.size),
       dustSizeJitter: uniform(Math.max(dust.sizeJitter, 1)),
-      dustSpeed: uniform(reduceMotion ? 0 : dust.speed),
-      dustDrift: uniform(reduceMotion ? 0 : dust.drift),
-      dustRise: uniform(reduceMotion ? 0 : dust.rise),
-      dustTwinkle: uniform(reduceMotion ? 0 : dust.twinkle),
+      dustSpeed: uniform(this.reduceMotion ? 0 : dust.speed),
+      dustDrift: uniform(this.reduceMotion ? 0 : dust.drift),
+      dustRise: uniform(this.reduceMotion ? 0 : dust.rise),
+      dustTwinkle: uniform(this.reduceMotion ? 0 : dust.twinkle),
       dustSoftness: uniform(Math.max(dust.softness, 0.2)),
       dustExtent: uniform(new Vector3(dust.width, dust.height, dust.depth)),
       dustOrigin: uniform(new Vector3(dust.x, dust.y, dust.z)),
@@ -121,6 +121,7 @@ export class DustField {
       dustFar: uniform(Math.max(dust.far, dust.near + 0.8)),
       dustSeed: uniform(dust.seed),
     };
+    this.uniforms = block;
     this.material = createDustMaterial({
       color: new Color(dust.color),
       block,
@@ -128,14 +129,30 @@ export class DustField {
     this.material.blending = dust.additive ? AdditiveBlending : NormalBlending;
     this.geometry = new PlaneGeometry(1, 1);
     this.object = null;
-    if (!dust.enabled || dust.count < 1) {
-      return;
-    }
-    const mesh = new InstancedMesh(this.geometry, this.material, Math.floor(dust.count));
+    const count = Math.max(1, Math.floor(dust.count ?? 240));
+    const mesh = new InstancedMesh(this.geometry, this.material, count);
     mesh.frustumCulled = false;
     mesh.renderOrder = 12;
     mesh.raycast = noRaycast;
+    mesh.visible = Boolean(dust.enabled && dust.opacity > 0.002);
     this.object = mesh;
+  }
+  setOptions({ enabled, opacity, color, speed } = {}) {
+    if (opacity !== undefined) {
+      this.uniforms.dustOpacity.value = Math.max(0, Math.min(1, opacity));
+    }
+    if (color !== undefined) {
+      this.material.color.set(color);
+    }
+    if (speed !== undefined && !this.reduceMotion) {
+      this.uniforms.dustSpeed.value = Math.max(0, speed);
+    }
+    if (this.object) {
+      const nextEnabled =
+        enabled !== undefined ? Boolean(enabled) : this.object.visible;
+      this.object.visible =
+        nextEnabled && this.uniforms.dustOpacity.value > 0.002;
+    }
   }
   dispose() {
     this.object?.removeFromParent();

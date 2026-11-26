@@ -689,13 +689,31 @@ export async function loadSurfaceTextureSet(slotConfig, anisotropy = 11) {
   return textureSetCache.get(genKey);
 }
 
-export function applyTrayInkTokens(theme) {
+/**
+ * @param {any} theme
+ * @param {any} [lighting]
+ */
+export function applyTrayInkTokens(theme, lighting) {
   if (typeof document === "undefined") return;
   const resolved = resolveSurfaceTheme(theme);
   const tray = resolved.tray;
   const root = document.documentElement;
-  const isDark = Boolean(tray.isDark);
+  const dimLighting = Boolean(
+    lighting &&
+      (lighting.brightness < 0.86 ||
+        (lighting.brightness < 0.94 && lighting.contrast > 1.25)),
+  );
+  const isDark = Boolean(tray.isDark || dimLighting);
+  const coolDark = dimLighting && !tray.isDark && (lighting?.warmth ?? 5600) >= 6200;
   root.dataset.trayTone = isDark ? "dark" : "light";
+  if (dimLighting && !tray.isDark) {
+    root.style.setProperty("--tray-stamp-ink", coolDark ? "#dce6f5" : "#efe2c8");
+    root.style.setProperty("--tray-stamp-strong", coolDark ? "#f5f9ff" : "#fff8e8");
+    root.style.setProperty("--tray-stamp-muted", coolDark ? "#b4c6df" : "#d8c4a0");
+    root.style.setProperty("--tray-select-bg", coolDark ? "#1a2230" : "#241e18");
+    root.style.setProperty("--tray-halo", "0 1px 3px rgba(0, 0, 0, 0.72)");
+    return;
+  }
   root.style.setProperty(
     "--tray-stamp-ink",
     tray.stampInk ?? (isDark ? "#ecd5a1" : "#363026"),

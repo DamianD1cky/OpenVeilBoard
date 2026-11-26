@@ -19,7 +19,10 @@ import { HoverDeck } from "./HoverDeck";
 import { ClockDialog } from "./ClockDialog";
 import { EdgeDialog } from "./EdgeDialog";
 import { PaperDialog, type IndentRect } from "./PaperDialog";
-import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
+import {
+  SurfaceThemeDrawer,
+  type SurfaceDrawerTab,
+} from "./SurfaceThemeDrawer";
 import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
 import { TrayEventClockStage } from "./TrayEventClockStage";
 import { playSound } from "../features/audio/audioEngine.js";
@@ -29,13 +32,17 @@ import {
   resolveSurfaceTheme,
   saveSurfaceTheme,
 } from "../scene/surfacePresets.js";
+import {
+  loadSavedLighting,
+  saveLighting,
+} from "../scene/lightingPresets.js";
 import { boardPlacement } from "./boardPlacement";
 import {
   getBoardRoute,
   navigateBoard,
   subscribeBoardRoute,
 } from "../shared/navigation";
-import type { NoteEdge, SurfaceTheme } from "../domain/types";
+import type { LightingState, NoteEdge, SurfaceTheme } from "../domain/types";
 import type { DiceRoll } from "../features/dice/types";
 import {
   RELATION_PRESETS,
@@ -100,16 +107,28 @@ export function Board({
   const [overlay, setOverlay] = useState<"clock" | "dice" | "surface" | null>(
     null,
   );
+  const [surfaceTab, setSurfaceTab] = useState<SurfaceDrawerTab>("surface");
   const [surfaceTheme, setSurfaceTheme] = useState<SurfaceTheme>(() =>
     loadSavedSurfaceTheme(room.campaignId),
   );
+  const [lighting, setLighting] = useState<LightingState>(
+    () => loadSavedLighting(room.campaignId) as LightingState,
+  );
+  const lightingImmediateRef = useRef(true);
   useEffect(() => {
     setSurfaceTheme(loadSavedSurfaceTheme(room.campaignId));
+    lightingImmediateRef.current = true;
+    setLighting(loadSavedLighting(room.campaignId) as LightingState);
   }, [room.campaignId]);
   useEffect(() => {
-    applyTrayInkTokens(surfaceTheme);
+    applyTrayInkTokens(surfaceTheme, lighting);
     void scene?.setSurfaceTheme?.(surfaceTheme);
-  }, [scene, surfaceTheme]);
+  }, [scene, surfaceTheme, lighting]);
+  useEffect(() => {
+    const immediate = lightingImmediateRef.current;
+    lightingImmediateRef.current = false;
+    scene?.setLighting?.(lighting, { immediate });
+  }, [scene, lighting]);
   const [indentRect, setIndentRect] = useState<IndentRect | null>(null);
   const [edge, setEdge] = useState<NoteEdge | null>(null),
     [quickEdge, setQuickEdge] = useState<NoteEdge | null>(null),
@@ -580,7 +599,11 @@ export function Board({
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
     : null;
-  const isDarkTray = Boolean(resolveSurfaceTheme(surfaceTheme).tray.isDark);
+  const isDarkTray = Boolean(
+    resolveSurfaceTheme(surfaceTheme).tray.isDark ||
+      lighting.brightness < 0.86 ||
+      (lighting.brightness < 0.94 && lighting.contrast > 1.25),
+  );
   const showCornerBar = route.kind === "home";
   const cornerBarStyle = indentRect
     ? {
@@ -728,10 +751,21 @@ export function Board({
               role="menuitem"
               onClick={() => {
                 setRoomMenu(false);
+                setSurfaceTab("surface");
                 setOverlay("surface");
               }}
             >
               台面纹理
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setRoomMenu(false);
+                setSurfaceTab("lighting");
+                setOverlay("surface");
+              }}
+            >
+              光影氛围
             </button>
             <button
               role="menuitem"
@@ -944,10 +978,18 @@ export function Board({
       {overlay === "surface" && (
         <SurfaceThemeDrawer
           theme={surfaceTheme}
+          lighting={lighting}
+          initialTab={surfaceTab}
+          onTabChange={setSurfaceTab}
           indentRect={indentRect}
           onChange={(next) => {
             setSurfaceTheme(next);
             saveSurfaceTheme(room.campaignId, next);
+          }}
+          onChangeLighting={(next, immediate = false) => {
+            lightingImmediateRef.current = immediate;
+            setLighting(next);
+            saveLighting(room.campaignId, next);
           }}
           onClose={() => setOverlay(null)}
         />

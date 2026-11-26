@@ -34,6 +34,21 @@ export interface SurfaceTheme {
   frameColor?: string;
   trayColor?: string;
 }
+export type GoboPattern = "flora" | "blinds" | "window" | "lamp" | "none";
+export interface LightingState {
+  presetId: string;
+  azimuth: number;
+  elevation: number;
+  warmth: number;
+  brightness: number;
+  contrast: number;
+  goboPattern: GoboPattern;
+  goboOpacity: number;
+  goboSoft: number;
+  goboSway: number;
+  dustEnabled: boolean;
+  clouds: boolean;
+}
 export interface NoteCapability<T = Record<string, any>> {
   id: string;
   type: CapabilityType;

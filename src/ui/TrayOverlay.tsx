@@ -28,8 +28,8 @@ export const TRAY_MENU_ZONES: Record<TrayMenuKey, NormalizedRect> = {
   surface: {
     left: -0.25,
     right: 0.25,
-    top: -0.38,
-    bottom: 0.38,
+    top: -0.41,
+    bottom: 0.41,
     preferDir: "left",
   },
   clock: {
@@ -61,6 +61,7 @@ export function TrayOverlay({
   onClose,
   indentRect = null,
   hideHeader = false,
+  headerContent,
   children,
 }: {
   menu: TrayMenuKey;
@@ -68,6 +69,7 @@ export function TrayOverlay({
   onClose: () => void;
   indentRect?: IndentRect | null;
   hideHeader?: boolean;
+  headerContent?: ReactNode;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -115,7 +117,7 @@ export function TrayOverlay({
       >
         {!hideHeader && (
           <header className="tray-overlay-head">
-            <h2>{title}</h2>
+            {headerContent ?? <h2>{title}</h2>}
             <button
               type="button"
               className="tray-overlay-close"
