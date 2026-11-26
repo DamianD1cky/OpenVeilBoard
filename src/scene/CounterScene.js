@@ -730,12 +730,17 @@ export class CounterScene {
           .project(this.app.camera);
         const dbWorld = c.diceButtonWorldPosition?.(new Vector3());
         const diceButton = dbWorld ? project(dbWorld) : null;
+        const cbWorld = c.clockButtonWorldPositions?.();
+        const clockButtons = cbWorld
+          ? { minus: project(cbWorld.minus), plus: project(cbWorld.plus) }
+          : null;
         return {
           id: c.note.id,
           title: c.note.title,
           x: ((p.x + 1) * this.app.size.width) / 2,
           y: ((1 - p.y) * this.app.size.height) / 2,
           diceButton,
+          clockButtons,
         };
       }),
     };

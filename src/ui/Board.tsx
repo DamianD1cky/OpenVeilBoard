@@ -24,7 +24,7 @@ import {
   type SurfaceDrawerTab,
 } from "./SurfaceThemeDrawer";
 import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
-import { TrayEventClockStage } from "./TrayEventClockStage";
+import { canReadNote } from "../domain/capabilityRegistry";
 import { playSound } from "../features/audio/audioEngine.js";
 import {
   applyTrayInkTokens,
@@ -137,6 +137,10 @@ export function Board({
     [hovered, setHovered] = useState<string | null>(null),
     [pinHovered, setPinHovered] = useState<string | null>(null),
     [diceBtnHovered, setDiceBtnHovered] = useState<string | null>(null),
+    [clockBtnHovered, setClockBtnHovered] = useState<{
+      noteId: string;
+      delta: number;
+    } | null>(null),
     [archivePullId, setArchivePullId] = useState<string | null>(null),
     [linkStart, setLinkStart] = useState<string | null>(null);
   const [error, setError] = useState(""),
@@ -346,7 +350,7 @@ export function Board({
     connect(id);
   };
   const stepEventClock = (noteId: string, capId: string, delta: number) => {
-    const note = state.notes.find((n) => n.id === noteId);
+    const note = store.getSnapshot().notes.find((n) => n.id === noteId);
     if (!note) return;
     let changed = false;
     const nextCaps = note.capabilities.map((c) => {
@@ -364,30 +368,6 @@ export function Board({
       rate: delta > 0 ? 1.45 : 1.05,
     });
     safe(store.patch(noteId, { capabilities: nextCaps }));
-  };
-  const promotePrimaryClock = (noteId: string, capId: string) => {
-    playSound("polaroid.dock", { volume: 0.18, rate: 1.3 });
-    for (const note of state.notes) {
-      if (note.archivedAt) continue;
-      let dirty = false;
-      const nextCaps = note.capabilities.map((c) => {
-        if (c.type !== "event_clock") return c;
-        const shouldBePrimary = note.id === noteId && c.id === capId;
-        if (Boolean(c.data?.primary) !== shouldBePrimary) {
-          dirty = true;
-          return {
-            ...c,
-            data: {
-              ...c.data,
-              pinned: shouldBePrimary ? true : c.data?.pinned,
-              primary: shouldBePrimary,
-            },
-          };
-        }
-        return c;
-      });
-      if (dirty) safe(store.patch(note.id, { capabilities: nextCaps }));
-    }
   };
   bridge.current = {
     canEdit: (note) =>
@@ -413,6 +393,18 @@ export function Board({
     },
     onDiceButtonHover: (id) => {
       setDiceBtnHovered(id);
+    },
+    onClockButtonHover: (hit) => {
+      setClockBtnHovered(hit);
+    },
+    onCardStepClock: (id, delta) => {
+      const target = store.getSnapshot().notes.find((n) => n.id === id);
+      if (!target || !bridge.current.canEdit(target)) return;
+      const clockCap = target.capabilities.find(
+        (c) => c.enabled && c.type === "event_clock",
+      );
+      if (!clockCap) return;
+      stepEventClock(target.id, clockCap.id, delta);
     },
     onCardRoll: (id) => {
       if (room.role === "observer" || rolling) return;
@@ -548,6 +540,7 @@ export function Board({
       setHoveredDice(null);
       setPinHovered(null);
       setDiceBtnHovered(null);
+      setClockBtnHovered(null);
       setLinkStart(null);
       setQuickEdge(null);
     }
@@ -611,8 +604,25 @@ export function Board({
     ? (state.notes.find((n) => n.id === diceBtnHovered) ?? null)
     : null;
   const diceBtnCap = diceBtnNote?.capabilities.find(
-    (c) => c.enabled && c.type === "dice_action",
+    (c) => c.enabled && c.type === "event_clock" ? false : c.enabled && c.type === "dice_action",
   );
+  const clockBtnNote = clockBtnHovered
+    ? (state.notes.find((n) => n.id === clockBtnHovered.noteId) ?? null)
+    : null;
+  const clockBtnCap = clockBtnNote?.capabilities.find(
+    (c) => c.enabled && c.type === "event_clock",
+  );
+  const clockBtnHint = (() => {
+    if (!clockBtnNote || !clockBtnCap || !clockBtnHovered) return null;
+    const segs = Math.max(2, Math.min(24, Number(clockBtnCap.data?.segments) || 6));
+    const cur = Math.max(0, Math.min(segs, Number(clockBtnCap.data?.value) || 0));
+    const name = String(clockBtnCap.data?.name || clockBtnNote.title || "事件钟");
+    const next = Math.max(0, Math.min(segs, cur + clockBtnHovered.delta));
+    if (next === cur) {
+      return `${name} 已达${clockBtnHovered.delta > 0 ? "满格" : "起点"} · ${cur}/${segs}`;
+    }
+    return `点击${clockBtnHovered.delta > 0 ? "推进" : "回退"}「${name}」· ${cur}/${segs} → ${next}/${segs}`;
+  })();
   const pinHint = pullNote
     ? `松手将「${pullNote.title}」放回台面`
     : isArchiveView && hoverNote
@@ -623,9 +633,11 @@ export function Board({
           : `已系住「${linkStartNote.title}」图钉 · 点击另一枚图钉连线 · Esc 取消`
         : pinHoverNote
           ? `点击「${pinHoverNote.title}」图钉连线`
-          : diceBtnNote && diceBtnCap
-            ? `点击直接投掷 · ⚄ ${diceBtnCap.data?.label ? `${diceBtnCap.data.label} ` : ""}${diceBtnCap.data?.notation || "1d20"}`
-            : null;
+          : clockBtnHint
+            ? clockBtnHint
+            : diceBtnNote && diceBtnCap
+              ? `点击直接投掷 · ⚄ ${diceBtnCap.data?.label ? `${diceBtnCap.data.label} ` : ""}${diceBtnCap.data?.notation || "1d20"}`
+              : null;
   const selectedId = route.kind === "note" ? route.noteId : null;
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
@@ -636,6 +648,57 @@ export function Board({
       (lighting.brightness < 0.94 && lighting.contrast > 1.25),
   );
   const showCornerBar = route.kind === "home";
+  const primaryFloorClock = useMemo(() => {
+    const items: Array<{
+      key: string;
+      noteId: string;
+      capId: string;
+      noteTitle: string;
+      name: string;
+      segments: number;
+      value: number;
+      consequence: string;
+      primary: boolean;
+    }> = [];
+    for (const note of state.notes) {
+      if (note.archivedAt) continue;
+      if (!canReadNote(note, session.user.id, room.role)) continue;
+      for (const cap of note.capabilities) {
+        if (!cap.enabled || cap.type !== "event_clock") continue;
+        if (cap.data?.pinned === false) continue;
+        const segments = Math.max(2, Math.min(24, Number(cap.data?.segments) || 6));
+        const value = Math.max(0, Math.min(segments, Number(cap.data?.value) || 0));
+        items.push({
+          key: `${note.id}:${cap.id}`,
+          noteId: note.id,
+          capId: cap.id,
+          noteTitle: note.title,
+          name: String(cap.data?.name || note.title || "事件钟").trim(),
+          segments,
+          value,
+          consequence: String(cap.data?.consequence || "").trim(),
+          primary: Boolean(cap.data?.primary),
+        });
+      }
+    }
+    if (!items.length) return null;
+    return (
+      items.find((c) => c.primary) ??
+      [...items].sort((a, b) => b.value / b.segments - a.value / a.segments)[0]
+    );
+  }, [state.notes, session.user.id, room.role]);
+  const floorClockHidden =
+    !showCornerBar ||
+    Boolean(
+      overlay === "clock" ||
+        overlay === "surface" ||
+        overlay === "dice" ||
+        edge ||
+        accountOpen,
+    );
+  useEffect(() => {
+    scene?.setEventClock?.(floorClockHidden ? null : primaryFloorClock);
+  }, [scene, floorClockHidden, primaryFloorClock]);
   const cornerBarStyle = indentRect
     ? {
         left: `${indentRect.left + 28}px`,
@@ -739,25 +802,6 @@ export function Board({
             </button>
           </div>
         </div>
-      )}
-      {showCornerBar && (
-        <TrayEventClockStage
-          notes={state.notes}
-          userId={session.user.id}
-          role={room.role}
-          scene={scene}
-          indentRect={indentRect}
-          hidden={Boolean(
-            overlay === "clock" ||
-              overlay === "surface" ||
-              overlay === "dice" ||
-              edge ||
-              accountOpen,
-          )}
-          onStepClock={stepEventClock}
-          onPromotePrimary={promotePrimaryClock}
-          onOpenNote={inspect}
-        />
       )}
       {roomMenu && showCornerBar && (
         <TrayOverlay

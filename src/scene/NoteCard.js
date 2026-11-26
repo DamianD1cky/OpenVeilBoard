@@ -23,6 +23,7 @@ import {
   noteRoughnessMap,
   notePaperNormalMap,
   getDiceButtonUvRect,
+  getClockStepUvRects,
 } from "../features/polaroids/noteTexture.js";
 import { createNoteBurnHooks } from "../features/polaroids/noteBurnHooks.js";
 import { fitScaleInWell, wellSeatOffsetZ } from "./ArchiveWell.js";
@@ -301,6 +302,46 @@ export class NoteCard {
     const wx = this.object.position.x + lx * Math.cos(yaw) + lz * Math.sin(yaw);
     const wz = this.object.position.z - lx * Math.sin(yaw) + lz * Math.cos(yaw);
     return target.set(wx, this.object.position.y + 0.005, wz);
+  }
+  clockHitTest(point) {
+    if (!point || this.swept || this.burningAway || this.archiving || !this.note) {
+      return 0;
+    }
+    const layout = getClockStepUvRects(this.note);
+    if (!layout) return 0;
+    const dx = point.x - this.object.position.x;
+    const dz = point.z - this.object.position.z;
+    const yaw = this.object.rotation.y;
+    const scale = Math.max(0.1, this.object.scale.x || 1);
+    const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    const u = lx / (this.width * scale) + 0.5;
+    const v = lz / (this.height * scale) + 0.5;
+    const pad = 0.024;
+    const inRect = (r) =>
+      u >= r.u0 - pad && u <= r.u1 + pad && v >= r.v0 - pad && v <= r.v1 + pad;
+    if (inRect(layout.plus)) return 1;
+    if (inRect(layout.minus)) return -1;
+    return 0;
+  }
+  clockButtonWorldPositions() {
+    const layout = getClockStepUvRects(this.note);
+    if (!layout) return null;
+    const scale = Math.max(0.1, this.object.scale.x || 1);
+    const yaw = this.object.rotation.y;
+    const toWorld = (r) => {
+      const lx = ((r.u0 + r.u1) * 0.5 - 0.5) * this.width * scale;
+      const lz = ((r.v0 + r.v1) * 0.5 - 0.5) * this.height * scale;
+      return new Vector3(
+        this.object.position.x + lx * Math.cos(yaw) + lz * Math.sin(yaw),
+        this.object.position.y + 0.005,
+        this.object.position.z - lx * Math.sin(yaw) + lz * Math.cos(yaw),
+      );
+    };
+    return {
+      minus: toWorld(layout.minus),
+      plus: toWorld(layout.plus),
+    };
   }
   dragTo(x, z, { latched = false, zone = null } = {}) {
     this.dragging = true;

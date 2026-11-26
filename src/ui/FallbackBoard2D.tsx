@@ -27,6 +27,8 @@ export interface BoardCallbacks {
   onPinHover?: (id: string | null) => void;
   onDiceButtonHover?: (id: string | null) => void;
   onCardRoll?: (id: string) => void;
+  onClockButtonHover?: (hit: { noteId: string; delta: number } | null) => void;
+  onCardStepClock?: (id: string, delta: number) => void;
   canEdit: (note: Note) => boolean;
   canLink?: () => boolean;
   canRoll?: () => boolean;
@@ -381,8 +383,44 @@ export function FallbackBoard2D({
                     </button>
                   )}
                   {clockCap && (
-                    <span>
-                      ◴ {clockCap.data.name || "事件钟"} {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
+                    <span className="card-clock-controls">
+                      {callbacks.canEdit(note) && (
+                        <button
+                          type="button"
+                          className="card-clock-step"
+                          aria-label={`回退 ${clockCap.data.name || "事件钟"}`}
+                          disabled={(clockCap.data.value ?? 0) <= 0}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            callbacks.onCardStepClock?.(note.id, -1);
+                          }}
+                        >
+                          −
+                        </button>
+                      )}
+                      <span>
+                        ◴ {clockCap.data.name || "事件钟"}{" "}
+                        {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
+                      </span>
+                      {callbacks.canEdit(note) && (
+                        <button
+                          type="button"
+                          className="card-clock-step"
+                          aria-label={`推进 ${clockCap.data.name || "事件钟"}`}
+                          disabled={
+                            (clockCap.data.value ?? 0) >=
+                            (clockCap.data.segments ?? 6)
+                          }
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            callbacks.onCardStepClock?.(note.id, 1);
+                          }}
+                        >
+                          +
+                        </button>
+                      )}
                     </span>
                   )}
                 </div>

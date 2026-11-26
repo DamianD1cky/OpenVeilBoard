@@ -38,6 +38,7 @@ export class NoteField {
         if (!this.downState) {
           this.setHoveredPin(null);
           this.setHoveredDiceBtn(null);
+          this.setHoveredClockBtn(null);
           this.hover(null);
         }
       },
@@ -438,6 +439,29 @@ export class NoteField {
     this.hoveredDiceBtnCard = card;
     this.callbacks.onDiceButtonHover?.(card ? card.note.id : null);
   }
+  clockAt(point) {
+    if (!point || this.archiveMode) return null;
+    for (const card of [...this.cards.values()].sort(
+      (a, b) => b.note.layer - a.note.layer,
+    )) {
+      const delta = card.clockHitTest(point);
+      if (delta !== 0) {
+        if (this.callbacks.canEdit && !this.callbacks.canEdit(card.note)) {
+          return null;
+        }
+        return { card, delta };
+      }
+    }
+    return null;
+  }
+  setHoveredClockBtn(hit) {
+    const prev = this.hoveredClockBtnHit;
+    if (prev?.card === hit?.card && prev?.delta === hit?.delta) return;
+    this.hoveredClockBtnHit = hit ?? null;
+    this.callbacks.onClockButtonHover?.(
+      hit ? { noteId: hit.card.note.id, delta: hit.delta } : null,
+    );
+  }
   setHoveredPin(card) {
     if (this.hoveredPinCard === card) return;
     if (this.hoveredPinCard) {
@@ -532,9 +556,11 @@ export class NoteField {
     const canLink = !this.archiveMode && (this.callbacks.canLink?.() ?? true);
     const canRoll = !this.archiveMode && (this.callbacks.canRoll?.() ?? true);
     const pinCard = canLink ? this.pinAt(point) : null;
-    const diceCard = !pinCard && canRoll ? this.diceAt(point) : null;
-    const card = pinCard ?? diceCard ?? this.at(point);
+    const clockHit = !pinCard ? this.clockAt(point) : null;
+    const diceCard = !pinCard && !clockHit && canRoll ? this.diceAt(point) : null;
+    const card = pinCard ?? clockHit?.card ?? diceCard ?? this.at(point);
     this.setHoveredDiceBtn(null);
+    this.setHoveredClockBtn(null);
     this.callbacks.onPointerDown?.();
     clearTimeout(this.hoverTimer);
     this.hovered?.setHover(false);
@@ -551,6 +577,7 @@ export class NoteField {
     this.downState = {
       card,
       pinCard,
+      clockHit,
       diceCard,
       x: e.clientX,
       y: e.clientY,
@@ -607,17 +634,20 @@ export class NoteField {
         this.hovered = null;
         this.callbacks.onHover?.(null);
         this.setHoveredDiceBtn(null);
+        this.setHoveredClockBtn(null);
         this.setHoveredPin(pinCard);
         this.ctx.rope?.highlight(pinCard.note.id);
         this.canvas.style.cursor = "pointer";
         return;
       }
       this.setHoveredPin(null);
+      const clockHit = this.clockAt(point);
+      this.setHoveredClockBtn(clockHit);
       const canRoll = !this.archiveMode && (this.callbacks.canRoll?.() ?? true);
-      const diceCard = canRoll ? this.diceAt(point) : null;
+      const diceCard = !clockHit && canRoll ? this.diceAt(point) : null;
       this.setHoveredDiceBtn(diceCard);
       this.hover(this.at(point), point);
-      if (diceCard) {
+      if (clockHit || diceCard) {
         this.canvas.style.cursor = "pointer";
       }
       return;
@@ -734,6 +764,12 @@ export class NoteField {
         }
       } else if (down.pinCard) {
         this.callbacks.onPinClick?.(down.pinCard.note.id);
+      } else if (down.clockHit) {
+        down.clockHit.card.pulse();
+        this.callbacks.onCardStepClock?.(
+          down.clockHit.card.note.id,
+          down.clockHit.delta,
+        );
       } else if (down.diceCard) {
         down.diceCard.pulse();
         this.callbacks.onCardRoll?.(down.diceCard.note.id);

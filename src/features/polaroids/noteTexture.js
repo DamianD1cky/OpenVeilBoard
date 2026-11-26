@@ -424,7 +424,7 @@ export function getDiceButtonUvRect(note) {
   const isPolaroid = note.cardStyle === "polaroid";
   const hasClock = enabledCaps.some((c) => c.type === "event_clock");
   const btnX = isPolaroid ? 52 : 44;
-  const btnW = isPolaroid ? 340 : hasClock ? 360 : 410;
+  const btnW = isPolaroid ? 340 : hasClock ? 310 : 410;
   const btnH = isPolaroid ? 48 : 56;
   const btnY = height - (isPolaroid ? 72 : 90);
   return {
@@ -437,6 +437,55 @@ export function getDiceButtonUvRect(note) {
     u1: (btnX + btnW) / width,
     v0: btnY / height,
     v1: (btnY + btnH) / height,
+  };
+}
+
+export function getClockStepUvRects(note) {
+  const enabledCaps = (note?.capabilities ?? []).filter((c) => c.enabled);
+  const clockCap = enabledCaps.find((c) => c.type === "event_clock");
+  if (!clockCap || note?.cardStyle === "polaroid") return null;
+  const isSealedStub =
+    note.title === "机密便签" &&
+    !note.body &&
+    enabledCaps.some((c) => c.type === "secret" && c.data?.scope !== "all");
+  if (isSealedStub) return null;
+  const width = 768;
+  const height = Math.round(width / cardAspect(note));
+  const hasDice = enabledCaps.some((c) => c.type === "dice_action");
+  const btnSize = 48;
+  const gap = 12;
+  const barW = hasDice ? 168 : 228;
+  const rightEdge = width - 44;
+  const plusX = rightEdge - btnSize;
+  const barX = plusX - gap - barW;
+  const minusX = barX - gap - btnSize;
+  const btnY = height - 86;
+  return {
+    cap: clockCap,
+    barX,
+    barW,
+    btnSize,
+    btnY,
+    minus: {
+      x: minusX,
+      y: btnY,
+      w: btnSize,
+      h: btnSize,
+      u0: minusX / width,
+      u1: (minusX + btnSize) / width,
+      v0: btnY / height,
+      v1: (btnY + btnSize) / height,
+    },
+    plus: {
+      x: plusX,
+      y: btnY,
+      w: btnSize,
+      h: btnSize,
+      u0: plusX / width,
+      u1: (plusX + btnSize) / width,
+      v0: btnY / height,
+      v1: (btnY + btnSize) / height,
+    },
   };
 }
 
@@ -606,29 +655,70 @@ function drawNoteToCanvas(canvas, note, image = null) {
     ctx.restore();
   }
 
-  // Clean horizontal segmented tally bar for notes carrying an event clock (no pie circle)
-  if (clockCap && !isPolaroid) {
-    const segs = Math.max(2, Math.min(24, Number(clockCap.data?.segments) || 6));
-    const val = Math.max(0, Math.min(segs, Number(clockCap.data?.value) || 0));
-    const barW = Math.min(260, width * 0.36);
+  // Tactile horizontal segmented tally bar + direct [-] / [+] step buttons on the card
+  const clockLayout = getClockStepUvRects(note);
+  if (clockLayout && !isPolaroid) {
+    const cap = clockLayout.cap;
+    const segs = Math.max(2, Math.min(24, Number(cap.data?.segments) || 6));
+    const val = Math.max(0, Math.min(segs, Number(cap.data?.value) || 0));
+    const accentStroke = dark ? "rgba(233, 123, 104, 0.86)" : "rgba(156, 47, 34, 0.82)";
+    const accentFill = dark ? "#e97b68" : "#9c2f22";
+    const accentWash = dark ? "rgba(233, 123, 104, 0.16)" : "rgba(156, 47, 34, 0.10)";
     const barH = 18;
-    const bx = width - barW - 46;
-    const by = height - 74;
-    const gap = segs > 10 ? 3 : 5;
-    const sw = (barW - gap * (segs - 1)) / segs;
+    const by = clockLayout.btnY + clockLayout.btnSize - barH - 4;
+    const segGap = segs > 10 ? 3 : 5;
+    const sw = (clockLayout.barW - segGap * (segs - 1)) / segs;
+
     ctx.save();
-    ctx.globalAlpha = dark ? 0.65 : 0.5;
+    // Compact clock name + fraction right above the segmented bar
+    const clockLabel = String(cap.data?.name || "事件钟").trim();
+    ctx.font = '700 20px "PingFang SC", "Noto Sans CJK SC", sans-serif';
+    ctx.fillStyle = dark ? "rgba(243, 232, 208, 0.82)" : "rgba(62, 50, 36, 0.78)";
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "left";
+    const maxNameW = clockLayout.barW - 52;
+    let shownName = clockLabel;
+    while (shownName.length > 2 && ctx.measureText(shownName).width > maxNameW) {
+      shownName = `${shownName.slice(0, -2)}…`;
+    }
+    ctx.fillText(shownName, clockLayout.barX, by - 6);
+    ctx.textAlign = "right";
+    ctx.fillStyle = accentFill;
+    ctx.font = '700 20px ui-monospace, "SF Mono", monospace';
+    ctx.fillText(`${val}/${segs}`, clockLayout.barX + clockLayout.barW, by - 6);
+
+    // Segmented tally track
     for (let i = 0; i < segs; i++) {
-      const x = bx + i * (sw + gap);
+      const x = clockLayout.barX + i * (sw + segGap);
       if (i < val) {
-        ctx.fillStyle = dark ? "#e97b68" : "#9c2f22";
+        ctx.fillStyle = accentFill;
         ctx.fillRect(x, by, sw, barH);
       } else {
-        ctx.strokeStyle = dark ? "#e97b68" : "#9c2f22";
+        ctx.strokeStyle = accentStroke;
         ctx.lineWidth = 2;
         ctx.strokeRect(x + 1, by + 1, sw - 2, barH - 2);
       }
     }
+
+    // Stamped [-] and [+] buttons flanking the gauge
+    const drawStepBtn = (rect, glyph, disabled) => {
+      ctx.save();
+      ctx.globalAlpha = disabled ? 0.34 : 0.96;
+      drawRoundedRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 7);
+      ctx.fillStyle = accentWash;
+      ctx.fill();
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = accentStroke;
+      ctx.stroke();
+      ctx.fillStyle = accentFill;
+      ctx.font = '700 32px ui-monospace, "SF Mono", "PingFang SC", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(glyph, rect.x + rect.w * 0.5, rect.y + rect.h * 0.52);
+      ctx.restore();
+    };
+    drawStepBtn(clockLayout.minus, "−", val <= 0);
+    drawStepBtn(clockLayout.plus, "+", val >= segs);
     ctx.restore();
   }
 

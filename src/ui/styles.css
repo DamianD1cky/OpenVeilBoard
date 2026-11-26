@@ -2672,6 +2672,36 @@ h3 {
 .card-dice-trigger:hover {
   background: rgba(156, 47, 34, 0.2);
 }
+.card-clock-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.card-clock-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 2px;
+  border: 1px solid rgba(156, 47, 34, 0.56);
+  background: rgba(156, 47, 34, 0.08);
+  color: #7d251b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.card-clock-step:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+.fallback-card.dark-paper .card-clock-step {
+  border-color: rgba(233, 123, 104, 0.56);
+  background: rgba(233, 123, 104, 0.14);
+  color: #f3c8be;
+}
 .note-drawer-top {
   display: flex;
   gap: 14px;
