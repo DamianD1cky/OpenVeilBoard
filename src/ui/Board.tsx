@@ -21,6 +21,8 @@ import { EdgeDialog } from "./EdgeDialog";
 import { PaperDialog, type IndentRect } from "./PaperDialog";
 import { SurfaceThemeDrawer } from "./SurfaceThemeDrawer";
 import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
+import { TrayEventClockStage } from "./TrayEventClockStage";
+import { playSound } from "../features/audio/audioEngine.js";
 import {
   applyTrayInkTokens,
   loadSavedSurfaceTheme,
@@ -254,6 +256,50 @@ export function Board({
     setLinkStart(null);
     setLinking(false);
   };
+  const stepEventClock = (noteId: string, capId: string, delta: number) => {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note) return;
+    let changed = false;
+    const nextCaps = note.capabilities.map((c) => {
+      if (c.id !== capId || c.type !== "event_clock") return c;
+      const segs = Math.max(2, Math.min(24, Number(c.data?.segments) || 6));
+      const cur = Math.max(0, Math.min(segs, Number(c.data?.value) || 0));
+      const nextVal = Math.max(0, Math.min(segs, cur + delta));
+      if (nextVal === cur) return c;
+      changed = true;
+      return { ...c, data: { ...c.data, value: nextVal } };
+    });
+    if (!changed) return;
+    playSound("polaroid.dock", {
+      volume: 0.28,
+      rate: delta > 0 ? 1.45 : 1.05,
+    });
+    safe(store.patch(noteId, { capabilities: nextCaps }));
+  };
+  const promotePrimaryClock = (noteId: string, capId: string) => {
+    playSound("polaroid.dock", { volume: 0.18, rate: 1.3 });
+    for (const note of state.notes) {
+      if (note.archivedAt) continue;
+      let dirty = false;
+      const nextCaps = note.capabilities.map((c) => {
+        if (c.type !== "event_clock") return c;
+        const shouldBePrimary = note.id === noteId && c.id === capId;
+        if (Boolean(c.data?.primary) !== shouldBePrimary) {
+          dirty = true;
+          return {
+            ...c,
+            data: {
+              ...c.data,
+              pinned: shouldBePrimary ? true : c.data?.pinned,
+              primary: shouldBePrimary,
+            },
+          };
+        }
+        return c;
+      });
+      if (dirty) safe(store.patch(note.id, { capabilities: nextCaps }));
+    }
+  };
   bridge.current = {
     canEdit: (note) =>
       room.role !== "observer" &&
@@ -345,6 +391,7 @@ export function Board({
     localStorage.setItem(`veilboard:visited:${session.user.id}`, "1");
     return () => {
       scene.setAvoidanceZone?.(null);
+      scene.setEventClock?.(null);
       scene.setRouteView?.(false);
       scene.setUI(false);
       scene.sync({ notes: [], edges: [], clock: state.clock });
@@ -522,6 +569,21 @@ export function Board({
           </div>
         </div>
       )}
+      {showCornerBar && (
+        <TrayEventClockStage
+          notes={state.notes}
+          userId={session.user.id}
+          role={room.role}
+          scene={scene}
+          indentRect={indentRect}
+          hidden={Boolean(
+            overlay === "clock" || overlay === "surface" || accountOpen,
+          )}
+          onStepClock={stepEventClock}
+          onPromotePrimary={promotePrimaryClock}
+          onOpenNote={inspect}
+        />
+      )}
       {roomMenu && showCornerBar && (
         <TrayOverlay
           menu="roomMenu"
@@ -590,6 +652,7 @@ export function Board({
         role={room.role}
         hidden={activeModal || hoverBlocked}
         raised={diceDocked}
+        indentRect={indentRect}
       />
       {hoveredDice && !activeModal && diceDocked && (
         <div className="dice-dock-hint" style={dockHintStyle} role="status">

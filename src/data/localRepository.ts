@@ -203,8 +203,8 @@ function demoNotes(campaignId: string) {
     [
       "灰雾港 · 第七夜",
       "雨停之前，所有线索都留在这张桌上。\n午夜钟响后，旧码头会重新开门。",
-      -0.27,
-      -0.14,
+      -0.29,
+      -0.02,
       "dossier",
       "yellow",
       [
@@ -218,13 +218,25 @@ function demoNotes(campaignId: string) {
             ],
           },
         },
+        {
+          type: "event_clock",
+          data: {
+            name: "午夜钟声",
+            segments: 4,
+            value: 1,
+            mode: "progress",
+            consequence: "旧码头铁门彻底落锁",
+            pinned: true,
+            primary: false,
+          },
+        },
       ],
     ],
     [
       "失踪的钟表匠",
-      "最后目击：黑鸦巷 17 号。\n随身带着一只停止在 22:15 的怀表。\n邻居说，那晚听见了海浪。",
-      0.02,
-      -0.07,
+      "最后目击：**黑鸦巷 17 号**。\n\n> 随身带着一只停止在 `22:15` 的怀表。\n\n- 邻居说那晚听见了海浪声\n- 柜台后残留潮湿的盐霜",
+      0.01,
+      0.06,
       "note",
       "blue",
       [{ type: "comments", data: { entries: [] } }],
@@ -233,7 +245,7 @@ function demoNotes(campaignId: string) {
       "潮水正在上涨",
       "码头仓库的窗口已经没入水中。\n当第六格填满，通往地下室的路将被淹没。",
       0.29,
-      0.02,
+      0.06,
       "urgent",
       "pink",
       [
@@ -242,9 +254,11 @@ function demoNotes(campaignId: string) {
           data: {
             name: "涨潮",
             segments: 6,
-            value: 3,
+            value: 4,
             mode: "progress",
-            consequence: "地下室入口被淹没",
+            consequence: "地下室入口被彻底淹没",
+            pinned: true,
+            primary: true,
           },
         },
       ],
@@ -252,8 +266,8 @@ function demoNotes(campaignId: string) {
     [
       "一封未寄出的信",
       "「若你看见灯塔闪烁两次，\n请带上那枚铜扣。」\n落款处只有一个字母：V。",
-      -0.15,
-      0.24,
+      -0.16,
+      0.28,
       "note",
       "yellow",
       [
@@ -292,10 +306,10 @@ function demoNotes(campaignId: string) {
               seed: 11.4,
             }
           : null,
-      capabilities: (capabilities as any[]).map((c) => ({
+      capabilities: (capabilities as any[]).map((c, j) => ({
         ...c,
         enabled: true,
-        id: crypto.randomUUID(),
+        id: `demo-cap-${i}-${j}`,
       })),
       archivedAt: null,
       authorId: "demo",

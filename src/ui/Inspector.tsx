@@ -109,7 +109,7 @@ export function Inspector({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState(false);
+  const [preview, setPreview] = useState(() => Boolean(note));
   const [showTools, setShowTools] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -222,6 +222,62 @@ export function Inspector({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [lightboxOpen, mediaItems.length, safeSlideIndex, scene]);
+
+  // Capture Escape when editing an existing note so it returns to reading mode first;
+  // also support pressing E in reading mode to jump directly into editing.
+  useEffect(() => {
+    if (lightboxOpen || readonly || sealed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !preview && note) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setPreview(true);
+        return;
+      }
+      if (
+        (e.key === "e" || e.key === "E") &&
+        preview &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        e.preventDefault();
+        setPreview(false);
+        requestAnimationFrame(() => bodyRef.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [lightboxOpen, readonly, sealed, preview, note]);
+
+  function applyMarkdownFormat(
+    prefix: string,
+    suffix = "",
+    placeholder = "",
+    lineStart = false,
+  ) {
+    const el = bodyRef.current;
+    const text = draft.body;
+    if (!el) {
+      setDraft({ ...draft, body: `${text}${prefix}${placeholder}${suffix}` });
+      return;
+    }
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? text.length;
+    const selected = text.slice(start, end) || placeholder;
+    const needsNewline =
+      lineStart && start > 0 && text[start - 1] !== "\n" ? "\n" : "";
+    const inserted = `${needsNewline}${prefix}${selected}${suffix}`;
+    const next = text.slice(0, start) + inserted + text.slice(end);
+    setDraft({ ...draft, body: next });
+    requestAnimationFrame(() => {
+      el.focus();
+      const selStart = start + needsNewline.length + prefix.length;
+      el.setSelectionRange(selStart, selStart + selected.length);
+    });
+  }
 
   // Auto-size giant hero title textarea
   useEffect(() => {
@@ -578,30 +634,99 @@ export function Inspector({
             ) : null}
           </div>
 
-          {/* Right Column: Body Editor/Preview, Meta Pills & Controls (respects ArchiveWell below) */}
+          {/* Right Column: Body Reader/Editor, Meta Pills & Controls (respects ArchiveWell below) */}
           <div className="note-meta-col">
-            <div className="note-meta-body-wrap">
+            <div
+              className={`note-meta-body-wrap ${preview ? "is-reading" : "is-editing"} ${!readonly && preview ? "can-click-edit" : ""}`}
+              onClick={(e) => {
+                if (!preview || readonly) return;
+                if ((e.target as HTMLElement).closest("a, button")) return;
+                const sel = window.getSelection?.()?.toString() ?? "";
+                if (sel.length > 0) return;
+                setPreview(false);
+                requestAnimationFrame(() => bodyRef.current?.focus());
+              }}
+            >
+              {!preview && !readonly && (
+                <div className="note-md-toolbar" role="toolbar" aria-label="Markdown 排版">
+                  <button
+                    type="button"
+                    title="加粗"
+                    onClick={() => applyMarkdownFormat("**", "**", "重点")}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    title="小标题"
+                    onClick={() => applyMarkdownFormat("### ", "", "小节标题", true)}
+                  >
+                    H
+                  </button>
+                  <button
+                    type="button"
+                    title="引用"
+                    onClick={() => applyMarkdownFormat("> ", "", "线索摘录", true)}
+                  >
+                    ”
+                  </button>
+                  <button
+                    type="button"
+                    title="列表"
+                    onClick={() => applyMarkdownFormat("- ", "", "线索条目", true)}
+                  >
+                    •
+                  </button>
+                  <button
+                    type="button"
+                    title="分隔线"
+                    onClick={() => applyMarkdownFormat("---\n", "", "", true)}
+                  >
+                    —
+                  </button>
+                  <button
+                    type="button"
+                    className="note-md-done"
+                    onClick={() => setPreview(true)}
+                  >
+                    完成预览
+                  </button>
+                </div>
+              )}
               {preview ? (
-                <div
-                  className="note-body-preview"
-                  dangerouslySetInnerHTML={{
-                    __html: DOMPurify.sanitize(
-                      marked.parse(draft.body || "（无正文内容）", {
-                        async: false,
-                      }) as string,
-                    ),
-                  }}
-                />
+                <>
+                  {!readonly && (
+                    <span className="note-edit-whisper" aria-hidden="true">
+                      点击编辑
+                    </span>
+                  )}
+                  <div
+                    className="note-body-preview"
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(
+                        marked.parse(draft.body || "（无正文内容）", {
+                          async: false,
+                        }) as string,
+                      ),
+                    }}
+                  />
+                </>
               ) : (
                 <textarea
                   ref={bodyRef}
                   className="note-body-input"
                   aria-label="便签正文"
-                  placeholder="写下线索，支持 Markdown"
+                  placeholder="写下线索，支持 Markdown（Cmd/Ctrl+Enter 保存）"
                   maxLength={1000}
                   rows={4}
                   value={draft.body}
                   readOnly={readonly}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !busy) {
+                      e.preventDefault();
+                      void save();
+                    }
+                  }}
                   onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                 />
               )}

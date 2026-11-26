@@ -40,7 +40,7 @@ export class NoteCard {
     this.paper = new Group();
     this.paper.rotation.x = -Math.PI / 2;
     this.object.add(this.paper);
-    this.burnHooks = createNoteBurnHooks(note, cardAspect(note.cardStyle));
+    this.burnHooks = createNoteBurnHooks(note, cardAspect(note));
     this.burnActive = 0;
     this.burningAway = false;
     this.material = new MeshPhysicalMaterial({
@@ -84,8 +84,9 @@ export class NoteCard {
     this.off = ctx.app.onFrame((_, dt) => this.frame(dt), -0.6);
   }
   update(note, width = this.width) {
-    const aspect = cardAspect(note.cardStyle);
-    const geometryChanged = this.width !== width || this.aspect !== aspect;
+    const aspect = cardAspect(note);
+    const geometryChanged =
+      this.width !== width || Math.abs((this.aspect ?? 0) - aspect) > 0.004;
     if (geometryChanged) {
       this.wiggle?.dispose();
       this.mesh.geometry?.dispose();
@@ -181,8 +182,9 @@ export class NoteCard {
       -boundZ,
       Math.min(boundZ, this.note.y * layout.indentHeight),
     );
-    this.aim.yaw = (-this.note.rotation * Math.PI) / 180;
-    this.aim.scale = 1;
+    const baseYaw = (-this.note.rotation * Math.PI) / 180;
+    this.aim.yaw = this.hovered ? baseYaw * 0.65 : baseYaw;
+    this.aim.scale = this.hovered ? 1.065 : 1;
     this.floor = floorY + 0.012 + Math.min(this.note.layer, 100) * 0.0002;
     if (
       this.aim.x !== previousX ||
@@ -219,7 +221,10 @@ export class NoteCard {
     if (this.hovered === on) return;
     this.hovered = on;
     this.wakeLinks();
-    this.aim.lift = on ? 0.035 : 0;
+    this.aim.lift = on ? 0.055 : 0;
+    this.aim.scale = on ? 1.065 : 1;
+    const baseYaw = (-this.note.rotation * Math.PI) / 180;
+    this.aim.yaw = on ? baseYaw * 0.65 : baseYaw;
     this.wakeWiggle();
   }
   dragTo(x, z, { latched = false, zone = null } = {}) {

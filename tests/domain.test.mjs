@@ -7,6 +7,7 @@ import {
   settlePosition,
   overlap,
   findFreePosition,
+  paperAspect,
 } from "../src/domain/geometry.js";
 import { createBoardStore } from "../src/domain/boardStore.ts";
 import {
@@ -240,4 +241,29 @@ test("浮空菜单避让仅推开遮挡便签，关闭后归零", () => {
   );
   assert.equal(offsets.has("far"), false, "不遮挡的卡片不应移动");
   assert.equal(computeAvoidanceOffsets(cards, null).size, 0);
+});
+test("短内容便签自适应收窄高度，拍立得保持经典比例", () => {
+  const shortNote = {
+    cardStyle: "note",
+    title: "码头暗号",
+    body: "407",
+    capabilities: [],
+  };
+  const longNote = {
+    cardStyle: "note",
+    title: "钟表匠留下的长篇调查记录",
+    body: "第一段线索说明\n第二段目击证词与地址信息\n第三段潮汐时间推演与地下室入口分析\n第四段补充附注说明",
+    capabilities: [{ type: "checklist", enabled: true, data: { items: [] } }],
+  };
+  const polaroid = {
+    cardStyle: "polaroid",
+    title: "短标题",
+    body: "",
+    capabilities: [],
+  };
+  assert.ok(
+    paperAspect(shortNote) > paperAspect(longNote) + 0.25,
+    "短便签应明显比长便签更紧凑（宽高比更大）",
+  );
+  assert.equal(paperAspect(polaroid), 0.8);
 });

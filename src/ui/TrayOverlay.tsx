@@ -26,10 +26,10 @@ export const TRAY_MENU_ZONES: Record<TrayMenuKey, NormalizedRect> = {
     preferDir: "left",
   },
   surface: {
-    left: 0.08,
-    right: 0.46,
-    top: -0.37,
-    bottom: 0.3,
+    left: -0.25,
+    right: 0.25,
+    top: -0.38,
+    bottom: 0.38,
     preferDir: "left",
   },
   clock: {

@@ -93,6 +93,34 @@ export function EventClockPanel({
         readOnly={readonly}
         onChange={(e) => onChange({ ...data, consequence: e.target.value })}
       />
+      <div className="inline-actions">
+        <button
+          type="button"
+          disabled={readonly}
+          aria-pressed={data.pinned !== false}
+          onClick={() =>
+            onChange({
+              ...data,
+              pinned: data.pinned === false,
+              primary: data.pinned === false ? Boolean(data.primary) : false,
+            })
+          }
+        >
+          {data.pinned === false ? "仅卡片显示" : "已置顶台面内槽"}
+        </button>
+        {data.pinned !== false && (
+          <button
+            type="button"
+            disabled={readonly}
+            aria-pressed={Boolean(data.primary)}
+            onClick={() =>
+              onChange({ ...data, pinned: true, primary: !data.primary })
+            }
+          >
+            {data.primary ? "★ 主危机钟" : "设为主危机钟"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

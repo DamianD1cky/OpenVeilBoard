@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { capabilityRegistry, canReadNote } from "../domain/capabilityRegistry";
 import type { Note } from "../domain/types";
+import type { IndentRect } from "./PaperDialog";
+
 export function HoverDeck({
   note,
   edges,
   userId,
   role,
   hidden,
-  raised = false,
+  indentRect = null,
 }: {
   note: Note | null;
   edges: number;
@@ -15,6 +17,7 @@ export function HoverDeck({
   role: string;
   hidden: boolean;
   raised?: boolean;
+  indentRect?: IndentRect | null;
 }) {
   const [shown, setShown] = useState<Note | null>(null);
   useEffect(() => {
@@ -22,43 +25,50 @@ export function HoverDeck({
       setShown(null);
       return;
     }
-    const timer = setTimeout(() => setShown(note), note ? 90 : 120);
+    const timer = setTimeout(() => setShown(note), note ? 80 : 110);
     return () => clearTimeout(timer);
   }, [note, hidden]);
+
   const sealed = shown && !canReadNote(shown, userId, role);
+  const style: CSSProperties | undefined = indentRect
+    ? {
+        left: `${indentRect.left + Math.round(indentRect.width * 0.22)}px`,
+        width: `${Math.max(200, Math.round(indentRect.width * 0.56))}px`,
+        bottom: `${Math.max(20, window.innerHeight - (indentRect.top + indentRect.height) + 20)}px`,
+      }
+    : undefined;
+
+  const capSummaries = shown && !sealed
+    ? shown.capabilities
+        .filter((c) => c.enabled)
+        .slice(0, 2)
+        .map((c) => capabilityRegistry.get(c.type)?.getHoverSummary(c.data))
+        .filter(Boolean)
+        .map((s) => `${s!.label} ${s!.value}`)
+    : [];
+
   return (
     <aside
-      className={`hover-deck ${raised ? "raised" : ""} ${hidden ? "hidden" : ""} ${shown && !hidden ? "visible" : ""}`}
+      className={`hover-caption ${hidden ? "hidden" : ""} ${shown && !hidden ? "visible" : ""}`}
+      style={style}
       aria-hidden="true"
     >
       {shown && (
-        <>
-          <div className="hover-title">
-            <i className={`paper-dot ${shown.color}`} />
-            <strong>{shown.title}</strong>
-            {edges > 0 && <span>{edges} 条连线</span>}
-          </div>
-          <p>{sealed ? "仅授权成员可见" : shown.body}</p>
-          <div className="hover-capabilities">
-            {shown.capabilities
-              .filter((c) => c.enabled)
-              .slice(0, 3)
-              .map((c) => {
-                const s = capabilityRegistry
-                  .get(c.type)
-                  ?.getHoverSummary(c.data);
-                return s ? (
-                  <span key={c.id}>
-                    {s.label} {s.value}
-                  </span>
-                ) : null;
-              })}
-          </div>
-          <small>
-            {shown.authorName} ·{" "}
-            {new Date(shown.updatedAt).toLocaleDateString("zh-CN")}
-          </small>
-        </>
+        <div className="hover-caption-line">
+          <i className={`paper-dot ${shown.color}`} />
+          <strong>{sealed ? "机密封条" : shown.title}</strong>
+          {sealed ? (
+            <span>仅授权成员可见</span>
+          ) : (
+            <>
+              {edges > 0 && <span>{edges} 条连线</span>}
+              {capSummaries.map((text, idx) => (
+                <span key={idx}>{text}</span>
+              ))}
+              <span className="hover-caption-author">{shown.authorName}</span>
+            </>
+          )}
+        </div>
       )}
     </aside>
   );

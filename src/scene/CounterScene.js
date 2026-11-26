@@ -25,6 +25,7 @@ import { Counter } from "./Counter.js";
 import { NoteField } from "./NoteField.js";
 import { RopeLinkLayer } from "./RopeLinkLayer.js";
 import { SurfaceClock3D } from "./SurfaceClock3D.js";
+import { SurfaceEventClock3D } from "./SurfaceEventClock3D.js";
 import { TableDiceLayer } from "./TableDiceLayer.js";
 import { NoteProjection } from "./NoteProjection.js";
 import { Opening } from "./Opening.js";
@@ -129,6 +130,8 @@ export class CounterScene {
     app.scene.add(this.rope.object);
     this.clock = ctx.clock = new SurfaceClock3D(ctx);
     app.scene.add(this.clock.object);
+    this.eventClock = ctx.eventClock = new SurfaceEventClock3D(ctx);
+    app.scene.add(this.eventClock.object);
     this.projection = ctx.projection = new NoteProjection(ctx);
     app.scene.add(this.projection.object);
     this.dice = ctx.dice = new TableDiceLayer(ctx, this.field, (roll) =>
@@ -503,12 +506,16 @@ export class CounterScene {
   burnNote(id, done) {
     this.field.burnAndRemove(id, done);
   }
+  setEventClock(clock) {
+    this.eventClock?.setEventClock(clock);
+  }
   setRouteView(activePage) {
     this.routeActive = Boolean(activePage);
     this.field.setSwept(this.routeActive);
     this.dice?.setSwept(this.routeActive);
     this.rope.setVisible(!this.routeActive);
     if (this.clock?.object) this.clock.object.visible = !this.routeActive;
+    this.eventClock?.setRouteHidden(this.routeActive);
   }
   setUI(active, inspect = false, blur = inspect) {
     this.field.enabled = active && !inspect;
@@ -554,6 +561,7 @@ export class CounterScene {
     this.rope?.dispose();
     this.field?.dispose();
     this.clock?.dispose();
+    this.eventClock?.dispose();
     this.opening?.dispose();
     this.dust?.dispose();
     this.counter?.dispose();

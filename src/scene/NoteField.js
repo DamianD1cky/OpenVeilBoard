@@ -69,9 +69,9 @@ export class NoteField {
       {
         id: "clock",
         x: 0,
-        y: -layout.indentHeight / 2 + 0.22,
-        width: Math.min(1.7, layout.indentWidth * 0.7),
-        height: 0.2,
+        y: -layout.indentHeight / 2 + 0.26,
+        width: Math.min(1.75, layout.indentWidth * 0.7),
+        height: 0.26,
         rotation: 0,
       },
     ];

@@ -81,6 +81,7 @@ export class Counter {
     this.disposeSurfaces();
     this.rebuild(true);
     this.ctx.clock?.refreshInk?.();
+    this.ctx.eventClock?.refreshInk?.();
   }
 
   disposeSurfaces() {

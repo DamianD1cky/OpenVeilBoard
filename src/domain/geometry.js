@@ -1,7 +1,90 @@
 export const clampCoordinate = (n) =>
   Math.max(-0.5, Math.min(0.5, Number(n) || 0));
-export const paperAspect = (style) =>
-  style === "dossier" ? 1.25 : style === "note" ? 1 : 0.8;
+
+function estimateWrappedLines(text, unitsPerLine, maxLines) {
+  if (!text || maxLines <= 0) return 0;
+  let total = 0;
+  for (const para of String(text).split("\n")) {
+    let units = 0;
+    let lines = 1;
+    for (const ch of para) {
+      const w = ch.charCodeAt(0) > 127 ? 1 : 0.56;
+      if (units + w > unitsPerLine && units > 0) {
+        lines++;
+        units = w;
+      } else {
+        units += w;
+      }
+    }
+    total += lines;
+    if (total >= maxLines) return maxLines;
+  }
+  return Math.min(maxLines, total);
+}
+
+/**
+ * Returns the physical paper width/height aspect ratio.
+ * Accepts either a style string (legacy default) or a full note object
+ * so short text notes shrink vertically instead of leaving empty bottom space.
+ */
+export const paperAspect = (styleOrNote) => {
+  if (!styleOrNote || typeof styleOrNote === "string") {
+    return styleOrNote === "dossier"
+      ? 1.25
+      : styleOrNote === "note"
+        ? 1
+        : 0.8;
+  }
+  const style = styleOrNote.cardStyle ?? "note";
+  if (style === "polaroid") return 0.8;
+
+  const hasImage = Boolean(
+    styleOrNote.imageUrl ||
+      styleOrNote.imagePath ||
+      (Array.isArray(styleOrNote.media) && styleOrNote.media.length > 0),
+  );
+  if (hasImage) {
+    return style === "dossier" ? 1.05 : style === "note" ? 0.9 : 0.8;
+  }
+
+  const caps = (styleOrNote.capabilities ?? []).filter((c) => c.enabled);
+  const isSealed =
+    styleOrNote.title === "机密便签" &&
+    !styleOrNote.body &&
+    caps.some((c) => c.type === "secret" && c.data?.scope !== "all");
+  if (isSealed) return 1.18;
+
+  const titleLines = Math.max(
+    1,
+    estimateWrappedLines(styleOrNote.title ?? "", 12, 2),
+  );
+  const cleanBody = String(styleOrNote.body ?? "")
+    .replace(/^[ \t]*([-*+]|\d+\.|>)\s+/gm, "")
+    .replace(/[#*`>_~]/g, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+  const bodyLines = cleanBody ? estimateWrappedLines(cleanBody, 18.5, 5) : 0;
+
+  const topStart = style === "dossier" ? 142 : style === "urgent" ? 136 : 114;
+  const hasClock = caps.some((c) => c.type === "event_clock");
+  const footerH = caps.length > 0 ? 104 : 52;
+  let height =
+    topStart +
+    titleLines * 62 +
+    (bodyLines > 0 ? 22 + bodyLines * 56 : 14) +
+    footerH;
+
+  if (hasClock) height = Math.max(height, 540);
+
+  const limits =
+    style === "dossier"
+      ? [420, 660]
+      : style === "urgent"
+        ? [460, 880]
+        : [410, 768];
+  const clamped = Math.max(limits[0], Math.min(limits[1], height));
+  return 768 / clamped;
+};
 export const legacyToNormalized = (x, y) => ({
   x: clampCoordinate((x - 44) / (2144 - 88) - 0.5),
   y: clampCoordinate((y - 44) / (1206 - 88) - 0.5),

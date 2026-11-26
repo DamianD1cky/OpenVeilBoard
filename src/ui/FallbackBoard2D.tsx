@@ -70,7 +70,7 @@ export function FallbackBoard2D({
       innerWidth <= 700
         ? innerWidth * 0.3
         : Math.max(100, Math.min(190, innerWidth * 0.14));
-    return { width, height: width / paperAspect(note.cardStyle) };
+    return { width, height: width / paperAspect(note) };
   };
   const bounds = (note: Note) => {
     const size = paperSize(note),

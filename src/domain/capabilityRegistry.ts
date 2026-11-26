@@ -30,29 +30,28 @@ function register(
     drawSurfaceBadge(ctx, data, rect) {
       if (type === "event_clock") {
         const segments = Math.max(2, Math.min(24, Number(data.segments) || 6));
-        const radius = rect.height * 0.34,
-          cx = rect.x + radius,
-          cy = rect.y + rect.height / 2;
+        const val = Math.max(0, Math.min(segments, Number(data.value) || 0));
+        const trackW = Math.min(112, rect.width * 0.56);
+        const barH = 14;
+        const by = rect.y + (rect.height - barH) / 2;
+        const gap = segments > 10 ? 2 : 3;
+        const sw = Math.max(2, (trackW - gap * (segments - 1)) / segments);
         for (let i = 0; i < segments; i++) {
-          const a = (i * Math.PI * 2) / segments - Math.PI / 2;
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.arc(
-            cx,
-            cy,
-            radius,
-            a + 0.025,
-            a + (Math.PI * 2) / segments - 0.025,
-          );
-          ctx.closePath();
-          ctx.fillStyle = i < data.value ? "#953d30" : "#c5bfb1";
-          ctx.fill();
+          const sx = rect.x + i * (sw + gap);
+          if (i < val) {
+            ctx.fillStyle = "#953d30";
+            ctx.fillRect(sx, by, sw, barH);
+          } else {
+            ctx.strokeStyle = "#9c9484";
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(sx + 0.75, by + 0.75, sw - 1.5, barH - 1.5);
+          }
         }
         ctx.fillStyle = "#504c41";
         ctx.fillText(
-          `${data.value ?? 0}/${segments}`,
-          rect.x + radius * 2.5,
-          cy + 9,
+          `${val}/${segments}`,
+          rect.x + trackW + 10,
+          rect.y + rect.height * 0.68,
         );
       } else {
         const s = summary(data);
@@ -85,6 +84,8 @@ register(
     value: 0,
     mode: "progress",
     consequence: "",
+    pinned: true,
+    primary: false,
   }),
   (d) => ({
     label: d.name || "事件钟",

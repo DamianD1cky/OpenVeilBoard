@@ -147,7 +147,8 @@ function drawNoteToCanvas(canvas, note, image = null) {
   });
   paintPolaroidCrease(ctx, { width, height, wear: 0.22, seed });
 
-  let top = 128;
+  let top = 114;
+  const enabledCaps = (note.capabilities ?? []).filter((c) => c.enabled);
 
   if (note.cardStyle === "dossier") {
     // Classic index dossier header band + faint ruled lines
@@ -164,7 +165,8 @@ function drawNoteToCanvas(canvas, note, image = null) {
       ? "rgba(241, 229, 203, 0.12)"
       : "rgba(68, 60, 48, 0.15)";
     ctx.lineWidth = 1.6;
-    for (let y = 196; y < height - 92; y += 64) {
+    const ruleStop = height - (enabledCaps.length > 0 ? 102 : 44);
+    for (let y = 196; y < ruleStop; y += 64) {
       ctx.beginPath();
       ctx.moveTo(44, y);
       ctx.lineTo(width - 44, y);
@@ -173,7 +175,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
     ctx.fillStyle = dark ? "#e59a86" : "#963f31";
     ctx.font = '600 22px ui-monospace, "SF Mono", monospace';
     ctx.fillText(`DOSSIER // ${String(note.id ?? "NEW").slice(-6).toUpperCase()}`, 48, 64);
-    top = 144;
+    top = 142;
   }
 
   if (note.cardStyle === "urgent") {
@@ -186,7 +188,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
     ctx.fillStyle = "#9b3c2b";
     ctx.font = '700 22px "PingFang SC", ui-monospace, sans-serif';
     ctx.fillText("URGENT · 紧急线索", 48, 66);
-    top = 138;
+    top = 136;
   }
 
   // Photo window (Polaroid authentic framing vs inline photo on other cards)
@@ -276,6 +278,33 @@ function drawNoteToCanvas(canvas, note, image = null) {
     ctx.restore();
   }
 
+  // Clean horizontal segmented tally bar for notes carrying an event clock (no pie circle)
+  const clockCap = enabledCaps.find((c) => c.type === "event_clock");
+  if (clockCap && !isPolaroid) {
+    const segs = Math.max(2, Math.min(24, Number(clockCap.data?.segments) || 6));
+    const val = Math.max(0, Math.min(segs, Number(clockCap.data?.value) || 0));
+    const barW = Math.min(260, width * 0.36);
+    const barH = 18;
+    const bx = width - barW - 46;
+    const by = height - 74;
+    const gap = segs > 10 ? 3 : 5;
+    const sw = (barW - gap * (segs - 1)) / segs;
+    ctx.save();
+    ctx.globalAlpha = dark ? 0.65 : 0.5;
+    for (let i = 0; i < segs; i++) {
+      const x = bx + i * (sw + gap);
+      if (i < val) {
+        ctx.fillStyle = dark ? "#e97b68" : "#9c2f22";
+        ctx.fillRect(x, by, sw, barH);
+      } else {
+        ctx.strokeStyle = dark ? "#e97b68" : "#9c2f22";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, by + 1, sw - 2, barH - 2);
+      }
+    }
+    ctx.restore();
+  }
+
   // Ink absorption pass
   ctx.save();
   ctx.globalAlpha = 0.94;
@@ -288,7 +317,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
     if (note.body && !image) {
       ctx.fillStyle = dark ? "#e2cfb1" : "#4e4536";
       ctx.font = '30px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-      wrapText(ctx, note.body.replace(/[#*`>]/g, ""), width - 104, 1).forEach(
+      wrapText(ctx, note.body.replace(/[#*`>_~]/g, ""), width - 104, 1).forEach(
         (line) => ctx.fillText(line, 52, top + 44),
       );
     }
@@ -296,26 +325,29 @@ function drawNoteToCanvas(canvas, note, image = null) {
     ctx.font = '700 52px "Songti SC", "Noto Serif SC", Georgia, "PingFang SC", serif';
     const title = wrapText(ctx, note.title, width - 92, 2);
     title.forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
-    top += title.length * 62 + 24;
+    top += title.length * 62 + 22;
     ctx.fillStyle = dark ? "#e4d2b4" : "#443c30";
     ctx.font = '34px "PingFang SC", "Noto Sans CJK SC", sans-serif';
+    const footerReserve = enabledCaps.length > 0 ? 104 : 44;
     const maxLines = Math.max(
       0,
-      Math.min(5, Math.floor((height - top - 115) / 58)),
+      Math.min(5, Math.floor((height - top - footerReserve) / 56)),
     );
-    wrapText(
-      ctx,
-      String(note.body ?? "").replace(/[#*`>]/g, ""),
-      width - 98,
-      maxLines,
-    ).forEach((line, i) => ctx.fillText(line, 46, top + i * 58));
+    const plainBody = String(note.body ?? "")
+      .replace(/^[ \t]*([-*+]|\d+\.|>)\s+/gm, "")
+      .replace(/[#*`>_~]/g, "")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+    wrapText(ctx, plainBody, width - 98, maxLines).forEach((line, i) =>
+      ctx.fillText(line, 46, top + i * 56),
+    );
   }
   ctx.restore();
 
   // Capability badges
   ctx.font = '26px "PingFang SC", sans-serif';
   ctx.fillStyle = dark ? "#e2cfb1" : "#655844";
-  const capabilities = (note.capabilities ?? []).filter((c) => c.enabled);
+  const capabilities = enabledCaps;
   const shown = capabilities.slice(0, capabilities.length > 3 ? 2 : 3);
   shown.forEach((cap, i) =>
     capabilityRegistry.get(cap.type)?.drawSurfaceBadge(ctx, cap.data, {
@@ -331,7 +363,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
 
 export function createNoteTexture(note, image = null) {
   const width = 768,
-    height = Math.round(width / cardAspect(note.cardStyle));
+    height = Math.round(width / cardAspect(note));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -349,11 +381,12 @@ export function createNoteTexture(note, image = null) {
  * @returns {string}
  */
 export function renderNotePreviewDataUrl(note, image = null) {
+  const aspect = cardAspect(note);
   const width = 384;
-  const height = Math.round(width / cardAspect(note.cardStyle));
+  const height = Math.round(width / aspect);
   const full = document.createElement("canvas");
   full.width = 768;
-  full.height = Math.round(768 / cardAspect(note.cardStyle));
+  full.height = Math.round(768 / aspect);
   drawNoteToCanvas(full, note, image);
   const thumb = document.createElement("canvas");
   thumb.width = width;
@@ -365,11 +398,12 @@ export function renderNotePreviewDataUrl(note, image = null) {
 
 const roughMaps = new Map();
 export function noteRoughnessMap(note, photo = false) {
-  const key = `${note.cardStyle}:${photo}`;
+  const aspect = cardAspect(note);
+  const key = `${note.cardStyle}:${photo}:${Math.round(aspect * 20)}`;
   if (roughMaps.has(key)) return roughMaps.get(key);
   const canvas = document.createElement("canvas");
   canvas.width = 192;
-  canvas.height = Math.round(192 / cardAspect(note.cardStyle));
+  canvas.height = Math.round(192 / aspect);
   const ctx = canvas.getContext("2d", { colorSpace: "srgb" });
   const isPolaroid = note.cardStyle === "polaroid";
   // Satin-matte cardstock base with gentle organic variation
@@ -386,7 +420,7 @@ export function noteRoughnessMap(note, photo = false) {
   if (photo || isPolaroid) {
     // Glossy photo emulsion region
     const padX = isPolaroid ? canvas.width * 0.068 : (44 / 768) * canvas.width;
-    const padTop = isPolaroid ? canvas.height * 0.062 : (64 / (768 / cardAspect(note.cardStyle))) * canvas.height;
+    const padTop = isPolaroid ? canvas.height * 0.062 : (64 / (768 / aspect)) * canvas.height;
     const availW = canvas.width - padX * 2;
     const photoH = canvas.height * (isPolaroid ? 0.66 : 0.36);
     ctx.fillStyle = photo ? "#1c1c1c" : "#444444";
