@@ -35,7 +35,7 @@
   --font-body: "Archivo", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
   font-family: var(--font-body);
   color: #363227;
-  background: #d8d2c8;
+  background: var(--tray-select-bg, #152b1f);
   font-synthesis: none;
   font-size: 14px;
 }
@@ -1286,52 +1286,52 @@ h3 {
 }
 :root,
 :root[data-tray-tone="light"] {
-  --tray-stamp-ink: #514b3e;
-  --tray-stamp-strong: #2a241b;
-  --tray-stamp-muted: #655d4c;
-  --tray-ink: color-mix(in srgb, var(--tray-stamp-strong) 76%, var(--tray-stamp-ink));
+  --tray-stamp-ink: #363026;
+  --tray-stamp-strong: #17130d;
+  --tray-stamp-muted: #4f473a;
+  --tray-ink: color-mix(in srgb, var(--tray-stamp-strong) 82%, var(--tray-stamp-ink));
   --tray-ink-strong: var(--tray-stamp-strong);
-  --tray-ink-muted: var(--tray-stamp-ink);
-  --tray-ink-subtle: color-mix(in srgb, var(--tray-stamp-ink) 76%, transparent);
-  --tray-line: color-mix(in srgb, var(--tray-stamp-strong) 44%, transparent);
-  --tray-line-strong: color-mix(in srgb, var(--tray-stamp-strong) 86%, transparent);
-  --tray-accent: #8c3425;
-  --tray-wash: color-mix(in srgb, var(--tray-stamp-strong) 8%, transparent);
-  --tray-wash-active: color-mix(in srgb, var(--tray-stamp-strong) 15%, transparent);
-  --tray-btn-bg: color-mix(in srgb, var(--tray-stamp-strong) 10%, transparent);
-  --tray-btn-bg-hover: color-mix(in srgb, var(--tray-stamp-strong) 18%, transparent);
+  --tray-ink-muted: color-mix(in srgb, var(--tray-stamp-ink) 88%, var(--tray-stamp-muted));
+  --tray-ink-subtle: color-mix(in srgb, var(--tray-stamp-muted) 82%, transparent);
+  --tray-line: color-mix(in srgb, var(--tray-stamp-strong) 48%, transparent);
+  --tray-line-strong: color-mix(in srgb, var(--tray-stamp-strong) 88%, transparent);
+  --tray-accent: #8c2e20;
+  --tray-wash: color-mix(in srgb, var(--tray-stamp-strong) 9%, transparent);
+  --tray-wash-active: color-mix(in srgb, var(--tray-stamp-strong) 17%, transparent);
+  --tray-btn-bg: transparent;
+  --tray-btn-bg-hover: color-mix(in srgb, var(--tray-stamp-strong) 12%, transparent);
   --tray-btn-ink: var(--tray-stamp-strong);
   --tray-pill-bg: transparent;
-  --tray-field-bg: color-mix(in srgb, var(--tray-stamp-strong) 5%, transparent);
-  --tray-halo: none;
-  --tray-danger: #943223;
-  --tray-select-bg: #dbd5c9;
+  --tray-field-bg: color-mix(in srgb, var(--tray-stamp-strong) 4%, transparent);
+  --tray-halo: 0 1px 0 rgba(255, 250, 240, 0.26);
+  --tray-danger: #982b1d;
+  --tray-select-bg: #dad3c6;
   --tray-blend: multiply;
-  --tray-ui-opacity: 0.95;
+  --tray-ui-opacity: 0.96;
 }
 :root[data-tray-tone="dark"] {
-  --tray-stamp-ink: #d8bc82;
-  --tray-stamp-strong: #f5dfad;
-  --tray-stamp-muted: #cbb078;
+  --tray-stamp-ink: #ecd5a1;
+  --tray-stamp-strong: #fff4d4;
+  --tray-stamp-muted: #d8be87;
   --tray-ink: var(--tray-stamp-ink);
   --tray-ink-strong: var(--tray-stamp-strong);
-  --tray-ink-muted: var(--tray-stamp-muted);
-  --tray-ink-subtle: color-mix(in srgb, var(--tray-stamp-muted) 56%, transparent);
-  --tray-line: color-mix(in srgb, var(--tray-stamp-ink) 32%, transparent);
-  --tray-line-strong: color-mix(in srgb, var(--tray-stamp-strong) 82%, transparent);
+  --tray-ink-muted: color-mix(in srgb, var(--tray-stamp-ink) 84%, var(--tray-stamp-muted));
+  --tray-ink-subtle: color-mix(in srgb, var(--tray-stamp-muted) 76%, transparent);
+  --tray-line: color-mix(in srgb, var(--tray-stamp-ink) 44%, transparent);
+  --tray-line-strong: color-mix(in srgb, var(--tray-stamp-strong) 88%, transparent);
   --tray-accent: var(--tray-stamp-strong);
-  --tray-wash: color-mix(in srgb, var(--tray-stamp-ink) 8%, transparent);
-  --tray-wash-active: color-mix(in srgb, var(--tray-stamp-strong) 15%, transparent);
-  --tray-btn-bg: color-mix(in srgb, var(--tray-stamp-ink) 11%, transparent);
-  --tray-btn-bg-hover: color-mix(in srgb, var(--tray-stamp-strong) 20%, transparent);
+  --tray-wash: color-mix(in srgb, var(--tray-stamp-ink) 10%, transparent);
+  --tray-wash-active: color-mix(in srgb, var(--tray-stamp-strong) 18%, transparent);
+  --tray-btn-bg: transparent;
+  --tray-btn-bg-hover: color-mix(in srgb, var(--tray-stamp-strong) 14%, transparent);
   --tray-btn-ink: var(--tray-stamp-strong);
   --tray-pill-bg: transparent;
   --tray-field-bg: color-mix(in srgb, var(--tray-stamp-ink) 5%, transparent);
-  --tray-halo: 0 1px 0 rgba(0, 0, 0, 0.24);
-  --tray-danger: #e98270;
-  --tray-select-bg: #1b201b;
+  --tray-halo: 0 1px 2px rgba(0, 0, 0, 0.46);
+  --tray-danger: #ff9a88;
+  --tray-select-bg: #152b1f;
   --tray-blend: normal;
-  --tray-ui-opacity: 0.88;
+  --tray-ui-opacity: 0.96;
 }
 
 .in-frame-stage {
@@ -2624,30 +2624,31 @@ body:has(.note-lightbox-overlay) .corner-bar,
 .tray-brand-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.9rem, 4vw, 3rem);
-  font-weight: 500;
-  letter-spacing: 0.2em;
+  font-size: clamp(2rem, 4.2vw, 3.1rem);
+  font-weight: 700;
+  letter-spacing: 0.22em;
   line-height: 1.05;
   color: var(--tray-ink-strong);
   text-shadow: var(--tray-halo);
 }
 .tray-brand-compact .tray-brand-title {
   font-size: clamp(1.5rem, 2.8vw, 2.1rem);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
 }
 .tray-brand-sub {
   margin: 10px 0 0;
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.24em;
+  font-weight: 600;
+  letter-spacing: 0.26em;
   color: var(--tray-ink-muted);
   text-shadow: var(--tray-halo);
 }
 .tray-loading {
   text-align: center;
   font-size: 13px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--tray-ink-muted);
+  text-shadow: var(--tray-halo);
 }
 .tray-auth-form {
   display: flex;
@@ -2661,8 +2662,8 @@ body:has(.note-lightbox-overlay) .corner-bar,
 }
 .tray-field span {
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   color: var(--tray-ink-muted);
   text-shadow: var(--tray-halo);
 }
@@ -2677,20 +2678,22 @@ body:has(.note-lightbox-overlay) .corner-bar,
   font-weight: 500;
   color: var(--tray-ink-strong);
   text-shadow: var(--tray-halo);
-  transition: border-color 0.18s ease, background 0.18s ease;
+  caret-color: var(--tray-ink-strong);
+  transition: border-color 0.18s ease;
 }
 .tray-field input::placeholder {
   color: var(--tray-ink-subtle);
+  opacity: 1;
 }
 .tray-field input:focus {
   outline: none;
   border-bottom-color: var(--tray-line-strong);
-  background: var(--tray-field-bg);
+  background: transparent;
 }
 .tray-auth-error {
   margin: 0;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--tray-danger);
   text-align: center;
   text-shadow: var(--tray-halo);
@@ -2699,26 +2702,29 @@ body:has(.note-lightbox-overlay) .corner-bar,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  margin-top: 6px;
+  gap: 14px;
+  margin-top: 8px;
 }
 .tray-submit-btn {
   width: 100%;
   padding: 10px 18px;
-  border: 1.5px solid var(--tray-line-strong);
-  border-radius: 2px;
-  background: var(--tray-btn-bg);
-  color: var(--tray-btn-ink);
+  border: none;
+  border-top: 1px solid var(--tray-line-strong);
+  border-bottom: 1px solid var(--tray-line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tray-ink-strong);
   font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-weight: 700;
+  letter-spacing: 0.24em;
   text-shadow: var(--tray-halo);
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, letter-spacing 0.18s ease;
 }
 .tray-submit-btn:hover:not(:disabled) {
   background: var(--tray-btn-bg-hover);
+  letter-spacing: 0.28em;
 }
 .tray-submit-btn:disabled {
   opacity: 0.42;
@@ -2727,18 +2733,21 @@ body:has(.note-lightbox-overlay) .corner-bar,
 .tray-switch-btn {
   background: transparent;
   border: none;
-  padding: 4px 6px;
+  border-bottom: 1px solid var(--tray-line);
+  border-radius: 0;
+  padding: 2px 4px 3px;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--tray-ink-muted);
   text-shadow: var(--tray-halo);
   cursor: pointer;
-  transition: color 0.16s ease;
+  transition: color 0.16s ease, border-color 0.16s ease;
 }
 .tray-switch-btn:hover {
   background: transparent;
   color: var(--tray-ink-strong);
+  border-bottom-color: var(--tray-ink-strong);
 }
 .tray-room-list {
   display: flex;

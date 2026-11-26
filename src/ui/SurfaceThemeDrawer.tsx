@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SURFACE_THEME,
   SURFACE_MATERIALS,
   SURFACE_THEME_PRESETS,
 } from "../scene/surfacePresets.js";
@@ -62,7 +63,7 @@ export function SurfaceThemeDrawer({
         <label>
           <span>外框材质</span>
           <select
-            value={theme.framePreset ?? "plaster_frame"}
+            value={theme.framePreset ?? DEFAULT_SURFACE_THEME.framePreset}
             onChange={(e) =>
               onChange({
                 ...theme,
@@ -81,7 +82,7 @@ export function SurfaceThemeDrawer({
         <label>
           <span>内槽材质</span>
           <select
-            value={theme.trayPreset ?? "plaster_tray"}
+            value={theme.trayPreset ?? DEFAULT_SURFACE_THEME.trayPreset}
             onChange={(e) =>
               onChange({
                 ...theme,

@@ -559,6 +559,12 @@ export class CounterScene {
     return {
       frame: this.app.frame,
       dpr: this.app.viewport.dpr,
+      surface: {
+        presetId: this.counter?.theme?.presetId ?? null,
+        frameId: this.counter?.theme?.frameId ?? null,
+        trayId: this.counter?.theme?.trayId ?? null,
+        appliedKey: this.counter?.appliedThemeKey ?? null,
+      },
       ropes: { count: this.rope.links.size, ...this.rope.stats },
       dice: { ...this.dice.stats, exiting: this.dice.exiting.size },
       archive: project(new Vector3(zone.x, floorY, zone.z)),

@@ -12,6 +12,7 @@ import {
 } from "../shared/counterGeometry.js";
 import { loadPlasterTextures, paintWearUniforms } from "./plaster.js";
 import {
+  loadLastSurfaceTheme,
   loadSurfaceTextureSet,
   resolveSurfaceTheme,
 } from "./surfacePresets.js";
@@ -29,19 +30,24 @@ export class Counter {
     this.floor = new Mesh();
     this.floor.receiveShadow = true;
     this.object.add(this.slab, this.floor);
-    this.theme = resolveSurfaceTheme(null);
+    this.theme = resolveSurfaceTheme(loadLastSurfaceTheme());
     this.themeVersion = 0;
+    this.appliedThemeKey = null;
     this.frameTextures = null;
     this.trayTextures = null;
     this.updateSurfaceInk();
     this.off = ctx.app.stores.size.subscribe(() => this.rebuild());
     this.rebuild();
+    const initToken = this.themeVersion;
     // Always load plaster base maps once so SurfaceClock3D paintMaps stay populated
     this.ready = Promise.all([
       loadPlasterTextures(ctx.controls.material.anisotropy),
-      this.loadThemeTextures(this.theme),
+      this.loadThemeTextures(this.theme, initToken),
     ]).then(() => {
-      if (!this.disposed) this.rebuild(true);
+      if (this.disposed || initToken !== this.themeVersion) return;
+      this.rebuild(true);
+      this.ctx.clock?.refreshInk?.();
+      this.ctx.eventClock?.refreshInk?.();
     });
   }
 
@@ -56,28 +62,35 @@ export class Counter {
     };
   }
 
-  async loadThemeTextures(resolved) {
+  async loadThemeTextures(resolved, token) {
     const aniso = this.ctx.controls.material.anisotropy;
     const [frameTex, trayTex] = await Promise.all([
       loadSurfaceTextureSet(resolved.frame, aniso),
       loadSurfaceTextureSet(resolved.tray, aniso),
     ]);
-    if (this.disposed) return;
+    if (this.disposed || token !== this.themeVersion) return false;
     this.frameTextures = frameTex;
     this.trayTextures = trayTex;
+    return true;
   }
 
   async setSurfaceTheme(nextTheme) {
     const resolved = resolveSurfaceTheme(nextTheme);
-    const same =
-      resolved.frameId === this.theme.frameId &&
-      resolved.trayId === this.theme.trayId;
-    if (same && this.slabSurface && this.floorSurface) return;
+    const nextKey = `${resolved.frameId}|${resolved.trayId}`;
+    const desiredKey = `${this.theme.frameId}|${this.theme.trayId}`;
+    if (
+      nextKey === this.appliedThemeKey &&
+      nextKey === desiredKey &&
+      this.slabSurface &&
+      this.floorSurface
+    ) {
+      return;
+    }
     this.theme = resolved;
     const token = ++this.themeVersion;
     this.updateSurfaceInk();
-    await this.loadThemeTextures(resolved);
-    if (this.disposed || token !== this.themeVersion) return;
+    const loaded = await this.loadThemeTextures(resolved, token);
+    if (!loaded || this.disposed || token !== this.themeVersion) return;
     this.disposeSurfaces();
     this.rebuild(true);
     this.ctx.clock?.refreshInk?.();
@@ -86,13 +99,18 @@ export class Counter {
 
   disposeSurfaces() {
     if (this.slabSurface) {
-      this.slabSurface.material.dispose();
+      const mat = this.slabSurface.material;
       this.slabSurface = null;
+      if (this.slab.material === mat) this.slab.material = null;
+      mat.dispose();
     }
     if (this.floorSurface) {
-      this.floorSurface.material.dispose();
+      const mat = this.floorSurface.material;
       this.floorSurface = null;
+      if (this.floor.material === mat) this.floor.material = null;
+      mat.dispose();
     }
+    this.appliedThemeKey = null;
   }
 
   rebuild(force = false) {
@@ -149,8 +167,12 @@ export class Counter {
     this.floor.geometry = createIndentFloorGeometry(layout, zone, slot);
     this.floor.position.y = floorY;
     if (!ready) {
-      this.slab.material ??= new MeshBasicMaterial({ color: "#b8b2a6" });
-      this.floor.material ??= new MeshBasicMaterial({ color: "#d8d2c8" });
+      const framePlaceholder =
+        this.theme.frame.selectBg ?? this.theme.frame.color ?? "#281910";
+      const trayPlaceholder =
+        this.theme.tray.selectBg ?? this.theme.tray.color ?? "#152b1f";
+      this.slab.material ??= new MeshBasicMaterial({ color: framePlaceholder });
+      this.floor.material ??= new MeshBasicMaterial({ color: trayPlaceholder });
       return;
     }
     const extent = Math.min(layout.counterWidth, layout.counterHeight);
@@ -201,6 +223,7 @@ export class Counter {
       );
       this.slab.material = this.slabSurface.material;
       this.floor.material = this.floorSurface.material;
+      this.appliedThemeKey = `${this.theme.frameId}|${this.theme.trayId}`;
     } else {
       this.slabSurface.update(this.theme.frame, extent, rim, {
         bump: this.theme.frame.kind !== "plaster",
@@ -209,6 +232,7 @@ export class Counter {
       this.floorSurface.update(this.theme.tray, extent, cavity, {
         wear: worn,
       });
+      this.appliedThemeKey = `${this.theme.frameId}|${this.theme.trayId}`;
     }
     paintWearUniforms.amount.value =
       this.theme.tray.wearMode === "plaster" ? controls.wear.text : 0.16;

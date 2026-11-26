@@ -29,6 +29,12 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#1a1814",
     cavityOpacity: 0.64,
     isDark: false,
+    stampInk: "#27292c",
+    stampHoverInk: "#111316",
+    wellInk: "#41454a",
+    selectBg: "#cac8c3",
+    halo: "0 1px 0 rgba(255, 255, 255, 0.24)",
+    slotBaseColor: "#24211c",
   },
   plaster_tray: {
     id: "plaster_tray",
@@ -45,9 +51,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#1a1814",
     cavityOpacity: 0.35,
     isDark: false,
-    stampInk: "#514b3e",
-    stampHoverInk: "#2a241b",
-    wellInk: "#655d4c",
+    stampInk: "#363026",
+    stampHoverInk: "#17130d",
+    wellInk: "#4f473a",
+    selectBg: "#dad3c6",
+    halo: "0 1px 0 rgba(255, 250, 240, 0.26)",
     slotBaseColor: "#24211c",
   },
   walnut: {
@@ -69,9 +77,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#120a06",
     cavityOpacity: 0.62,
     isDark: true,
-    stampInk: "#dfcca5",
-    stampHoverInk: "#f7ead0",
-    wellInk: "#cfb88a",
+    stampInk: "#f0dfb9",
+    stampHoverInk: "#fff7e2",
+    wellInk: "#dcc69a",
+    selectBg: "#281910",
+    halo: "0 1px 3px rgba(0, 0, 0, 0.56)",
     slotBaseColor: "#140c07",
   },
   baize_felt: {
@@ -92,9 +102,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#0a1710",
     cavityOpacity: 0.52,
     isDark: true,
-    stampInk: "#d8bc82",
-    stampHoverInk: "#f5dfad",
-    wellInk: "#cbb078",
+    stampInk: "#ecd5a1",
+    stampHoverInk: "#fff4d4",
+    wellInk: "#d8be87",
+    selectBg: "#152b1f",
+    halo: "0 1px 2px rgba(0, 0, 0, 0.44)",
     slotBaseColor: "#09140e",
   },
   aged_brass: {
@@ -115,9 +127,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#181106",
     cavityOpacity: 0.66,
     isDark: true,
-    stampInk: "#f2e0b6",
-    stampHoverInk: "#fff3d6",
-    wellInk: "#dfc894",
+    stampInk: "#f7e7c0",
+    stampHoverInk: "#ffffff",
+    wellInk: "#e6cfa0",
+    selectBg: "#24190c",
+    halo: "0 1px 3px rgba(0, 0, 0, 0.68)",
     slotBaseColor: "#181209",
   },
   aged_leather: {
@@ -140,9 +154,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#120a07",
     cavityOpacity: 0.56,
     isDark: true,
-    stampInk: "#d8bc82",
-    stampHoverInk: "#f7e3b7",
-    wellInk: "#c9aa70",
+    stampInk: "#f0dbb0",
+    stampHoverInk: "#fff6dc",
+    wellInk: "#dbc18f",
+    selectBg: "#2b1c13",
+    halo: "0 1px 3px rgba(0, 0, 0, 0.54)",
     slotBaseColor: "#120b07",
   },
   brushed_metal: {
@@ -162,10 +178,12 @@ export const SURFACE_MATERIALS = {
     wearMode: "none",
     cavityColor: "#0e1114",
     cavityOpacity: 0.6,
-    isDark: false,
-    stampInk: "#353c45",
-    stampHoverInk: "#171c22",
-    wellInk: "#444d57",
+    isDark: true,
+    stampInk: "#e4ebf2",
+    stampHoverInk: "#ffffff",
+    wellInk: "#c4d0dc",
+    selectBg: "#1e2328",
+    halo: "0 1px 3px rgba(0, 0, 0, 0.68)",
     slotBaseColor: "#121518",
   },
   esd_mat: {
@@ -186,9 +204,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#0e1215",
     cavityOpacity: 0.5,
     isDark: true,
-    stampInk: "#cfd8df",
+    stampInk: "#e4edf4",
     stampHoverInk: "#ffffff",
-    wellInk: "#b2bec8",
+    wellInk: "#c4d1dc",
+    selectBg: "#232a30",
+    halo: "0 1px 2px rgba(0, 0, 0, 0.5)",
     slotBaseColor: "#101417",
   },
   nero_marble: {
@@ -210,9 +230,11 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#080706",
     cavityOpacity: 0.65,
     isDark: true,
-    stampInk: "#dfc386",
-    stampHoverInk: "#faebb8",
-    wellInk: "#cfb376",
+    stampInk: "#f4e8ca",
+    stampHoverInk: "#ffffff",
+    wellInk: "#dfd0ac",
+    selectBg: "#171513",
+    halo: "0 1px 4px rgba(0, 0, 0, 0.72)",
     slotBaseColor: "#080706",
   },
   micro_cement: {
@@ -230,22 +252,22 @@ export const SURFACE_MATERIALS = {
     cavityColor: "#100f0d",
     cavityOpacity: 0.58,
     isDark: true,
-    stampInk: "#ddd6c7",
+    stampInk: "#eee8dc",
     stampHoverInk: "#ffffff",
-    wellInk: "#bfb7a8",
+    wellInk: "#d4ccc0",
+    selectBg: "#292724",
+    halo: "0 1px 2px rgba(0, 0, 0, 0.46)",
     slotBaseColor: "#11100e",
   },
 };
 
+export const DEFAULT_SURFACE_THEME = {
+  presetId: "victorian_club",
+  framePreset: "walnut",
+  trayPreset: "baize_felt",
+};
+
 export const SURFACE_THEME_PRESETS = [
-  {
-    id: "plaster",
-    label: "暗房石膏",
-    subtitle: "冷灰石膏外框 · 暖米石膏内槽",
-    frameId: "plaster_frame",
-    trayId: "plaster_tray",
-    swatches: ["#bebcb8", "#d4cec3"],
-  },
   {
     id: "victorian_club",
     label: "维多利亚调查局",
@@ -253,6 +275,14 @@ export const SURFACE_THEME_PRESETS = [
     frameId: "walnut",
     trayId: "baize_felt",
     swatches: ["#4a2c1a", "#1e3c2b"],
+  },
+  {
+    id: "plaster",
+    label: "暗房石膏",
+    subtitle: "冷灰石膏外框 · 暖米石膏内槽",
+    frameId: "plaster_frame",
+    trayId: "plaster_tray",
+    swatches: ["#bebcb8", "#d4cec3"],
   },
   {
     id: "detective_brass",
@@ -281,9 +311,12 @@ export const SURFACE_THEME_PRESETS = [
 ];
 
 export function resolveSurfaceTheme(theme) {
+  const defaultPreset =
+    SURFACE_THEME_PRESETS.find((p) => p.id === DEFAULT_SURFACE_THEME.presetId) ??
+    SURFACE_THEME_PRESETS[0];
   const preset =
     SURFACE_THEME_PRESETS.find((p) => p.id === theme?.presetId) ??
-    SURFACE_THEME_PRESETS[0];
+    defaultPreset;
   const frameId =
     theme?.framePreset && SURFACE_MATERIALS[theme.framePreset]
       ? theme.framePreset
@@ -292,8 +325,11 @@ export function resolveSurfaceTheme(theme) {
     theme?.trayPreset && SURFACE_MATERIALS[theme.trayPreset]
       ? theme.trayPreset
       : preset.trayId;
+  const matchedPreset = SURFACE_THEME_PRESETS.find(
+    (p) => p.frameId === frameId && p.trayId === trayId,
+  );
   return {
-    presetId: preset.id,
+    presetId: matchedPreset ? matchedPreset.id : "custom",
     frameId,
     trayId,
     frame: SURFACE_MATERIALS[frameId],
@@ -301,17 +337,88 @@ export function resolveSurfaceTheme(theme) {
   };
 }
 
-export function loadSavedSurfaceTheme(campaignId) {
+const LAST_SURFACE_KEY = "veilboard:surface:last";
+const ROOM_SURFACE_PREFIX = "veilboard:surface:";
+
+function normalizeSurfaceTheme(theme) {
+  const resolved = resolveSurfaceTheme(theme);
+  return {
+    presetId: resolved.presetId,
+    framePreset: resolved.frameId,
+    trayPreset: resolved.trayId,
+  };
+}
+
+function readStoredSurfaceTheme(key) {
   try {
-    const raw = localStorage.getItem(`veilboard:surface:${campaignId}`);
-    if (raw) return JSON.parse(raw);
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.presetId && !parsed.framePreset && !parsed.trayPreset) {
+      return null;
+    }
+    return normalizeSurfaceTheme(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export function syncLastSurfaceTheme(theme) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(
+      LAST_SURFACE_KEY,
+      JSON.stringify(normalizeSurfaceTheme(theme)),
+    );
   } catch {}
-  return { presetId: "plaster", framePreset: "plaster_frame", trayPreset: "plaster_tray" };
+}
+
+export function loadLastSurfaceTheme() {
+  const direct = readStoredSurfaceTheme(LAST_SURFACE_KEY);
+  if (direct) return direct;
+  // Backfill if a room surface was saved before LAST_SURFACE_KEY was introduced
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          key.startsWith(ROOM_SURFACE_PREFIX) &&
+          key !== LAST_SURFACE_KEY
+        ) {
+          const found = readStoredSurfaceTheme(key);
+          if (found) {
+            syncLastSurfaceTheme(found);
+            return found;
+          }
+        }
+      }
+    }
+  } catch {}
+  return { ...DEFAULT_SURFACE_THEME };
+}
+
+export function loadSavedSurfaceTheme(campaignId) {
+  if (campaignId) {
+    const saved = readStoredSurfaceTheme(`${ROOM_SURFACE_PREFIX}${campaignId}`);
+    if (saved) {
+      syncLastSurfaceTheme(saved);
+      return saved;
+    }
+  }
+  return loadLastSurfaceTheme();
 }
 
 export function saveSurfaceTheme(campaignId, theme) {
   try {
-    localStorage.setItem(`veilboard:surface:${campaignId}`, JSON.stringify(theme));
+    if (typeof localStorage === "undefined") return;
+    const encoded = JSON.stringify(normalizeSurfaceTheme(theme));
+    if (campaignId) {
+      localStorage.setItem(`${ROOM_SURFACE_PREFIX}${campaignId}`, encoded);
+    }
+    localStorage.setItem(LAST_SURFACE_KEY, encoded);
   } catch {}
 }
 
@@ -591,14 +698,22 @@ export function applyTrayInkTokens(theme) {
   root.dataset.trayTone = isDark ? "dark" : "light";
   root.style.setProperty(
     "--tray-stamp-ink",
-    tray.stampInk ?? (isDark ? "#d8bc82" : "#514b3e"),
+    tray.stampInk ?? (isDark ? "#ecd5a1" : "#363026"),
   );
   root.style.setProperty(
     "--tray-stamp-strong",
-    tray.stampHoverInk ?? (isDark ? "#f5dfad" : "#2a241b"),
+    tray.stampHoverInk ?? (isDark ? "#fff4d4" : "#17130d"),
   );
   root.style.setProperty(
     "--tray-stamp-muted",
-    tray.wellInk ?? (isDark ? "#cbb078" : "#655d4c"),
+    tray.wellInk ?? (isDark ? "#d8be87" : "#4f473a"),
+  );
+  root.style.setProperty(
+    "--tray-select-bg",
+    tray.selectBg ?? (isDark ? "#1b201b" : "#dad3c6"),
+  );
+  root.style.setProperty(
+    "--tray-halo",
+    tray.halo ?? (isDark ? "0 1px 2px rgba(0, 0, 0, 0.46)" : "0 1px 0 rgba(255, 250, 240, 0.24)"),
   );
 }

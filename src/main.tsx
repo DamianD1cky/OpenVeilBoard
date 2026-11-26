@@ -10,7 +10,10 @@ import { RoomLobby } from "./ui/RoomLobby";
 import { AccountDialog } from "./ui/AccountDialog";
 import { Board } from "./ui/Board";
 import type { IndentRect } from "./ui/PaperDialog";
-import { applyTrayInkTokens } from "./scene/surfacePresets.js";
+import {
+  applyTrayInkTokens,
+  loadLastSurfaceTheme,
+} from "./scene/surfacePresets.js";
 import {
   unlockAudio,
   setAmbientTrack,
@@ -128,12 +131,14 @@ function Application({
     }
   }, [session?.user.id]);
   useEffect(() => {
-    if (!room) {
-      applyTrayInkTokens(null);
+    if (!session || !room) {
+      const preRoomTheme = loadLastSurfaceTheme();
+      applyTrayInkTokens(preRoomTheme);
+      void scene?.setSurfaceTheme?.(preRoomTheme);
       scene?.setAvoidanceZone?.(null);
       scene?.setUI(false, true, false);
     }
-  }, [room, scene, account]);
+  }, [session?.user.id, room, scene, account]);
   const enter = (next: ActiveCampaignAccess) => {
     if (session)
       localStorage.setItem(
@@ -192,6 +197,7 @@ function AuthApplication() {
   const auth = useAuthSession();
   return <Application {...auth} />;
 }
+applyTrayInkTokens(loadLastSurfaceTheme());
 createRoot(document.getElementById("ui-root")!).render(
   demo ? (
     <Application

@@ -107,6 +107,7 @@ export function Board({
     setSurfaceTheme(loadSavedSurfaceTheme(room.campaignId));
   }, [room.campaignId]);
   useEffect(() => {
+    applyTrayInkTokens(surfaceTheme);
     void scene?.setSurfaceTheme?.(surfaceTheme);
   }, [scene, surfaceTheme]);
   const [indentRect, setIndentRect] = useState<IndentRect | null>(null);
@@ -580,9 +581,6 @@ export function Board({
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
     : null;
   const isDarkTray = Boolean(resolveSurfaceTheme(surfaceTheme).tray.isDark);
-  useEffect(() => {
-    applyTrayInkTokens(surfaceTheme);
-  }, [surfaceTheme]);
   const showCornerBar = route.kind === "home";
   const cornerBarStyle = indentRect
     ? {
