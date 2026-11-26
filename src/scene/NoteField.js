@@ -37,6 +37,7 @@ export class NoteField {
       pointerleave: () => {
         if (!this.downState) {
           this.setHoveredPin(null);
+          this.setHoveredDiceBtn(null);
           this.hover(null);
         }
       },
@@ -424,6 +425,19 @@ export class NoteField {
         .find((c) => c.pinHitTest(point)) ?? null
     );
   }
+  diceAt(point) {
+    if (!point || this.archiveMode) return null;
+    return (
+      [...this.cards.values()]
+        .sort((a, b) => b.note.layer - a.note.layer)
+        .find((c) => c.diceHitTest(point)) ?? null
+    );
+  }
+  setHoveredDiceBtn(card) {
+    if (this.hoveredDiceBtnCard === card) return;
+    this.hoveredDiceBtnCard = card;
+    this.callbacks.onDiceButtonHover?.(card ? card.note.id : null);
+  }
   setHoveredPin(card) {
     if (this.hoveredPinCard === card) return;
     if (this.hoveredPinCard) {
@@ -516,8 +530,11 @@ export class NoteField {
     if (!point) return;
     this.lastPointerPoint = point.clone();
     const canLink = !this.archiveMode && (this.callbacks.canLink?.() ?? true);
+    const canRoll = !this.archiveMode && (this.callbacks.canRoll?.() ?? true);
     const pinCard = canLink ? this.pinAt(point) : null;
-    const card = pinCard ?? this.at(point);
+    const diceCard = !pinCard && canRoll ? this.diceAt(point) : null;
+    const card = pinCard ?? diceCard ?? this.at(point);
+    this.setHoveredDiceBtn(null);
     this.callbacks.onPointerDown?.();
     clearTimeout(this.hoverTimer);
     this.hovered?.setHover(false);
@@ -534,6 +551,7 @@ export class NoteField {
     this.downState = {
       card,
       pinCard,
+      diceCard,
       x: e.clientX,
       y: e.clientY,
       time: performance.now(),
@@ -588,13 +606,20 @@ export class NoteField {
         this.hovered?.setHover(false);
         this.hovered = null;
         this.callbacks.onHover?.(null);
+        this.setHoveredDiceBtn(null);
         this.setHoveredPin(pinCard);
         this.ctx.rope?.highlight(pinCard.note.id);
         this.canvas.style.cursor = "pointer";
         return;
       }
       this.setHoveredPin(null);
+      const canRoll = !this.archiveMode && (this.callbacks.canRoll?.() ?? true);
+      const diceCard = canRoll ? this.diceAt(point) : null;
+      this.setHoveredDiceBtn(diceCard);
       this.hover(this.at(point), point);
+      if (diceCard) {
+        this.canvas.style.cursor = "pointer";
+      }
       return;
     }
     down.moved ||= Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 6;
@@ -709,6 +734,9 @@ export class NoteField {
         }
       } else if (down.pinCard) {
         this.callbacks.onPinClick?.(down.pinCard.note.id);
+      } else if (down.diceCard) {
+        down.diceCard.pulse();
+        this.callbacks.onCardRoll?.(down.diceCard.note.id);
       } else if (card) {
         this.callbacks.onSelect?.(card.note.id);
       } else if (point && this.ctx.counterObject.well?.contains(point))

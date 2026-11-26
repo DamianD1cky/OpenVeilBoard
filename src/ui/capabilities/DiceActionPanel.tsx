@@ -1,46 +1,54 @@
 import type { CapabilityPanelProps } from "./types";
+
+const QUICK_FORMULAS = ["1d20", "1d100", "2d6", "1d6"];
+
 export function DiceActionPanel({
   data,
   readonly,
   onChange,
-  onTriggerAction,
-  canAct,
 }: CapabilityPanelProps) {
+  const notation = data.notation ?? "1d20";
   return (
     <div className="dice-action-panel">
       <div className="form-pair">
         <label>
-          检定名
+          <span>检定名</span>
           <input
+            placeholder="例如：侦查、开锁"
             value={data.label ?? ""}
             readOnly={readonly}
             onChange={(e) => onChange({ ...data, label: e.target.value })}
           />
         </label>
         <label>
-          公式
+          <span>公式</span>
           <input
-            value={data.notation ?? "1d20"}
+            value={notation}
             readOnly={readonly}
             onChange={(e) => onChange({ ...data, notation: e.target.value })}
           />
         </label>
       </div>
-      {data.last != null && <p className="last-roll">上次结果 {data.last}</p>}
-      <button
-        type="button"
-        className="ink-button"
-        disabled={canAct === false}
-        onClick={() =>
-          onTriggerAction?.({
-            type: "roll",
-            notation: data.notation ?? "1d20",
-            label: data.label ?? "",
-          })
-        }
-      >
-        投掷到台面
-      </button>
+      {!readonly && (
+        <div className="dice-quick-formulas">
+          {QUICK_FORMULAS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`dice-formula-chip ${notation === f ? "active" : ""}`}
+              onClick={() => onChange({ ...data, notation: f })}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="dice-action-foot">
+        <small>将在桌面便签左下角生成「投掷」按钮，点按即可直接掷骰</small>
+        {data.last != null && (
+          <span className="last-roll">上次 {data.last}</span>
+        )}
+      </div>
     </div>
   );
 }

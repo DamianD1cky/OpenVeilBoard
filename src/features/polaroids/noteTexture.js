@@ -410,6 +410,47 @@ function paintCardstockGrain(ctx, width, height, seed, dark) {
   ctx.restore();
 }
 
+export function getDiceButtonUvRect(note) {
+  const enabledCaps = (note?.capabilities ?? []).filter((c) => c.enabled);
+  const diceCap = enabledCaps.find((c) => c.type === "dice_action");
+  if (!diceCap) return null;
+  const isSealedStub =
+    note.title === "机密便签" &&
+    !note.body &&
+    enabledCaps.some((c) => c.type === "secret" && c.data?.scope !== "all");
+  if (isSealedStub) return null;
+  const width = 768;
+  const height = Math.round(width / cardAspect(note));
+  const isPolaroid = note.cardStyle === "polaroid";
+  const hasClock = enabledCaps.some((c) => c.type === "event_clock");
+  const btnX = isPolaroid ? 52 : 44;
+  const btnW = isPolaroid ? 340 : hasClock ? 360 : 410;
+  const btnH = isPolaroid ? 48 : 56;
+  const btnY = height - (isPolaroid ? 72 : 90);
+  return {
+    cap: diceCap,
+    x: btnX,
+    y: btnY,
+    w: btnW,
+    h: btnH,
+    u0: btnX / width,
+    u1: (btnX + btnW) / width,
+    v0: btnY / height,
+    v1: (btnY + btnH) / height,
+  };
+}
+
+function drawRoundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
 function drawNoteToCanvas(canvas, note, image = null) {
   const width = canvas.width;
   const height = canvas.height;
@@ -435,6 +476,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
   let top = 114;
   const enabledCaps = (note.capabilities ?? []).filter((c) => c.enabled);
   const clockCap = enabledCaps.find((c) => c.type === "event_clock");
+  const diceBtn = getDiceButtonUvRect(note);
 
   if (note.cardStyle === "dossier") {
     // Classic index dossier header band + faint ruled lines
@@ -451,7 +493,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
       ? "rgba(241, 229, 203, 0.12)"
       : "rgba(68, 60, 48, 0.15)";
     ctx.lineWidth = 1.6;
-    const ruleStop = height - (clockCap ? 102 : 44);
+    const ruleStop = height - (clockCap || diceBtn ? 106 : 44);
     for (let y = 196; y < ruleStop; y += 64) {
       ctx.beginPath();
       ctx.moveTo(44, y);
@@ -614,7 +656,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
     const title = wrapText(ctx, note.title, width - 92, 2);
     title.forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
     top += title.length * 62 + 22;
-    const footerReserve = clockCap ? 102 : 44;
+    const footerReserve = clockCap || diceBtn ? 108 : 44;
     const maxLines = Math.max(
       0,
       Math.min(5, Math.floor((height - top - footerReserve) / 56)),
@@ -629,6 +671,58 @@ function drawNoteToCanvas(canvas, note, image = null) {
     });
   }
   ctx.restore();
+
+  // Tactile stamped dice-roll trigger button directly on the card
+  if (diceBtn) {
+    const notation = String(diceBtn.cap.data?.notation || "1d20").trim();
+    const label = String(diceBtn.cap.data?.label || "").trim();
+    const last = diceBtn.cap.data?.last;
+    const primaryText = label ? `${label} · ${notation}` : `投掷 ${notation}`;
+    const pillText =
+      last != null ? `${primaryText} (${last})` : primaryText;
+
+    ctx.save();
+    ctx.font = `700 ${isPolaroid ? 22 : 25}px "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+    const iconW = 30;
+    const textW = ctx.measureText(pillText).width;
+    const drawnW = Math.min(diceBtn.w, Math.max(180, textW + iconW + 46));
+    const bx = diceBtn.x;
+    const by = diceBtn.y;
+    const bh = diceBtn.h;
+
+    drawRoundedRectPath(ctx, bx, by, drawnW, bh, 8);
+    ctx.fillStyle = dark
+      ? "rgba(232, 186, 114, 0.18)"
+      : "rgba(156, 47, 34, 0.11)";
+    ctx.fill();
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = dark
+      ? "rgba(242, 206, 146, 0.72)"
+      : "rgba(156, 47, 34, 0.68)";
+    ctx.stroke();
+
+    // Inner hairline accent for vintage ticket/stamp feel
+    drawRoundedRectPath(ctx, bx + 4, by + 4, drawnW - 8, bh - 8, 5);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = dark
+      ? "rgba(242, 206, 146, 0.28)"
+      : "rgba(156, 47, 34, 0.24)";
+    ctx.stroke();
+
+    ctx.fillStyle = dark ? "#f5e3be" : "#88251a";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${isPolaroid ? 24 : 27}px "PingFang SC", sans-serif`;
+    ctx.fillText("⚄", bx + 16, by + bh * 0.52);
+
+    ctx.font = `700 ${isPolaroid ? 21 : 24}px "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+    let shownText = pillText;
+    const maxTextW = drawnW - iconW - 30;
+    while (shownText.length > 3 && ctx.measureText(shownText).width > maxTextW) {
+      shownText = `${shownText.slice(0, -2)}…`;
+    }
+    ctx.fillText(shownText, bx + 16 + iconW, by + bh * 0.52);
+    ctx.restore();
+  }
 }
 
 export function createNoteTexture(note, image = null) {

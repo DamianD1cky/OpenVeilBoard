@@ -68,7 +68,8 @@ export const paperAspect = (styleOrNote) => {
 
   const topStart = style === "dossier" ? 142 : style === "urgent" ? 136 : 114;
   const hasClock = caps.some((c) => c.type === "event_clock");
-  const footerH = hasClock ? 104 : 52;
+  const hasDice = caps.some((c) => c.type === "dice_action");
+  const footerH = hasClock || hasDice ? 108 : 52;
   let height =
     topStart +
     titleLines * 62 +

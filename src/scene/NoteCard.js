@@ -22,6 +22,7 @@ import {
   cardAspect,
   noteRoughnessMap,
   notePaperNormalMap,
+  getDiceButtonUvRect,
 } from "../features/polaroids/noteTexture.js";
 import { createNoteBurnHooks } from "../features/polaroids/noteBurnHooks.js";
 import { fitScaleInWell, wellSeatOffsetZ } from "./ArchiveWell.js";
@@ -267,6 +268,39 @@ export class NoteCard {
     const dx = point.x - this._pinWorld.x;
     const dz = point.z - this._pinWorld.z;
     return dx * dx + dz * dz <= radius * radius;
+  }
+  diceHitTest(point) {
+    if (!point || this.swept || this.burningAway || this.archiving || !this.note) {
+      return false;
+    }
+    const rect = getDiceButtonUvRect(this.note);
+    if (!rect) return false;
+    const dx = point.x - this.object.position.x;
+    const dz = point.z - this.object.position.z;
+    const yaw = this.object.rotation.y;
+    const scale = Math.max(0.1, this.object.scale.x || 1);
+    const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    const u = lx / (this.width * scale) + 0.5;
+    const v = lz / (this.height * scale) + 0.5;
+    const pad = 0.028;
+    return (
+      u >= rect.u0 - pad &&
+      u <= rect.u1 + pad &&
+      v >= rect.v0 - pad &&
+      v <= rect.v1 + pad
+    );
+  }
+  diceButtonWorldPosition(target = new Vector3()) {
+    const rect = getDiceButtonUvRect(this.note);
+    if (!rect) return null;
+    const scale = Math.max(0.1, this.object.scale.x || 1);
+    const lx = ((rect.u0 + rect.u1) * 0.5 - 0.5) * this.width * scale;
+    const lz = ((rect.v0 + rect.v1) * 0.5 - 0.5) * this.height * scale;
+    const yaw = this.object.rotation.y;
+    const wx = this.object.position.x + lx * Math.cos(yaw) + lz * Math.sin(yaw);
+    const wz = this.object.position.z - lx * Math.sin(yaw) + lz * Math.cos(yaw);
+    return target.set(wx, this.object.position.y + 0.005, wz);
   }
   dragTo(x, z, { latched = false, zone = null } = {}) {
     this.dragging = true;

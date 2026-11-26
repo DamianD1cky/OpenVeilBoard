@@ -175,7 +175,7 @@ export function Inspector({
   // Sync WebGPU recessed-tray optical projection whenever draft media changes
   useEffect(() => {
     if (!scene?.setNoteProjection) return;
-    if (sealed || editorExpanded) {
+    if (sealed) {
       scene.setNoteProjection({ active: false, items: [] });
       return;
     }
@@ -189,7 +189,7 @@ export function Inspector({
       })),
       selectedIndex: safeSlideIndex,
     });
-  }, [scene, sealed, editorExpanded, mediaItems, safeSlideIndex]);
+  }, [scene, sealed, mediaItems, safeSlideIndex]);
 
   useEffect(() => {
     return () => {
@@ -206,7 +206,7 @@ export function Inspector({
       return;
     }
     const el = projectionHitRef.current;
-    if (!el || sealed || editorExpanded || mediaItems.length === 0) {
+    if (!el || sealed || mediaItems.length === 0) {
       scene.setNoteProjectionBounds(null);
       return;
     }
@@ -233,7 +233,7 @@ export function Inspector({
       ro?.disconnect();
       window.removeEventListener("resize", syncBounds);
     };
-  }, [scene, indentRect, sealed, editorExpanded, mediaItems.length]);
+  }, [scene, indentRect, sealed, mediaItems.length]);
 
   // Capture Escape when editor is expanded so it restores split view first
   useEffect(() => {
@@ -682,7 +682,7 @@ export function Inspector({
                 {editorExpanded ? (
                   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
                     <path
-                      d="M6 2v4H2M10 14v-4h4M2 10h4v4M14 6h-4V2"
+                      d="M4 10l4-4 4 4M3 3h10"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="1.4"
@@ -693,7 +693,7 @@ export function Inspector({
                 ) : (
                   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
                     <path
-                      d="M10 2h4v4M6 14H2v-4M14 2l-4.5 4.5M2 14l4.5-4.5"
+                      d="M4 6l4 4 4-4M3 13h10"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="1.4"
@@ -820,276 +820,300 @@ export function Inspector({
                 载入最新版本
               </button>
             )}
-            {/* Expandable Tools / Burn / Card Preview / Capabilities inside right column (never covers projection) */}
+            {/* Expandable Attributes & Mechanisms inside right column (card-based, zero hard dividers) */}
             {showTools && (
               <div className="about-drawer note-tools-drawer">
-              <div className="note-drawer-top">
-                {cardThumb && (
-                  <figure className="note-card-thumb">
-                    <img src={cardThumb} alt="桌面纸卡预览" />
-                    <figcaption>
-                      {STYLE_LABELS[draft.cardStyle]}
-                      {draft.burn && draft.burn.mode !== "none"
-                        ? ` · ${BURN_LABELS[draft.burn.mode]}`
-                        : ""}
-                    </figcaption>
-                  </figure>
-                )}
+                <div className="note-prop-card">
+                  <div className="note-drawer-top">
+                    {cardThumb && (
+                      <figure className="note-card-thumb">
+                        <img src={cardThumb} alt="桌面纸卡预览" />
+                        <figcaption>
+                          {STYLE_LABELS[draft.cardStyle]}
+                          {draft.burn && draft.burn.mode !== "none"
+                            ? ` · ${BURN_LABELS[draft.burn.mode]}`
+                            : ""}
+                        </figcaption>
+                      </figure>
+                    )}
 
-                <div className="note-drawer-controls">
-                  <div className="about-meta-row">
-                    <label>
-                      <span>纸张</span>
-                      <select
-                        value={draft.cardStyle}
-                        disabled={readonly}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            cardStyle: e.target.value as CardStyle,
-                          })
-                        }
-                      >
-                        <option value="note">纸笺</option>
-                        <option value="polaroid">拍立得</option>
-                        <option value="dossier">案卷索引</option>
-                        <option value="urgent">紧急封条</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>纸色</span>
-                      <select
-                        value={draft.color}
-                        disabled={readonly}
-                        onChange={(e) =>
-                          setDraft({ ...draft, color: e.target.value })
-                        }
-                      >
-                        {!paperOptions.some(([value]) => value === draft.color) && (
-                          <option value={draft.color}>原纸色</option>
-                        )}
-                        {paperOptions.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>图钉</span>
-                      <select
-                        value={draft.pinColor}
-                        disabled={readonly}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            pinColor: e.target.value as PinColor,
-                          })
-                        }
-                      >
-                        <option value="red">红</option>
-                        <option value="blue">蓝</option>
-                        <option value="green">绿</option>
-                        <option value="yellow">铜</option>
-                        <option value="black">黑</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  {/* Burnt Note Shader Controls */}
-                  <div className="note-burn-controls">
-                    <label>
-                      <span>燃烧质感</span>
-                      <select
-                        value={draft.burn?.mode ?? "none"}
-                        disabled={readonly}
-                        onChange={(e) => setBurnMode(e.target.value as BurnMode)}
-                      >
-                        <option value="none">完好纸面</option>
-                        <option value="scorched">焦边残卷（静态）</option>
-                        <option value="burning">余烬燃烧（动态火星）</option>
-                      </select>
-                    </label>
-                    {draft.burn && draft.burn.mode !== "none" && (
-                      <>
+                    <div className="note-drawer-controls">
+                      <div className="about-meta-row">
                         <label>
-                          <span>烧灼方位</span>
+                          <span>纸张</span>
                           <select
-                            value={draft.burn.topology}
+                            value={draft.cardStyle}
                             disabled={readonly}
                             onChange={(e) =>
                               setDraft({
                                 ...draft,
-                                burn: {
-                                  ...draft.burn!,
-                                  topology: e.target.value as BurnTopology,
-                                },
+                                cardStyle: e.target.value as CardStyle,
                               })
                             }
                           >
-                            {(Object.keys(TOPO_LABELS) as BurnTopology[]).map(
-                              (topo) => (
-                                <option key={topo} value={topo}>
-                                  {TOPO_LABELS[topo]}
-                                </option>
-                              ),
-                            )}
+                            <option value="note">纸笺</option>
+                            <option value="polaroid">拍立得</option>
+                            <option value="dossier">案卷索引</option>
+                            <option value="urgent">紧急封条</option>
                           </select>
                         </label>
-                        <label className="note-burn-slider">
-                          <span>
-                            烧灼程度 {Math.round(draft.burn.progress * 100)}%
-                          </span>
-                          <input
-                            type="range"
-                            min={0.08}
-                            max={0.55}
-                            step={0.02}
+                        <label>
+                          <span>纸色</span>
+                          <select
+                            value={draft.color}
                             disabled={readonly}
-                            value={draft.burn.progress}
+                            onChange={(e) =>
+                              setDraft({ ...draft, color: e.target.value })
+                            }
+                          >
+                            {!paperOptions.some(([value]) => value === draft.color) && (
+                              <option value={draft.color}>原纸色</option>
+                            )}
+                            {paperOptions.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>图钉</span>
+                          <select
+                            value={draft.pinColor}
+                            disabled={readonly}
                             onChange={(e) =>
                               setDraft({
                                 ...draft,
-                                burn: {
-                                  ...draft.burn!,
-                                  progress: Number(e.target.value),
-                                },
+                                pinColor: e.target.value as PinColor,
                               })
                             }
-                          />
+                          >
+                            <option value="red">红</option>
+                            <option value="blue">蓝</option>
+                            <option value="green">绿</option>
+                            <option value="yellow">铜</option>
+                            <option value="black">黑</option>
+                          </select>
                         </label>
-                      </>
-                    )}
+                      </div>
+
+                      {/* Burnt Note Shader Controls */}
+                      <div className="note-burn-controls">
+                        <label>
+                          <span>燃烧质感</span>
+                          <select
+                            value={draft.burn?.mode ?? "none"}
+                            disabled={readonly}
+                            onChange={(e) => setBurnMode(e.target.value as BurnMode)}
+                          >
+                            <option value="none">完好纸面</option>
+                            <option value="scorched">焦边残卷（静态）</option>
+                            <option value="burning">余烬燃烧（动态火星）</option>
+                          </select>
+                        </label>
+                        {draft.burn && draft.burn.mode !== "none" && (
+                          <>
+                            <label>
+                              <span>烧灼方位</span>
+                              <select
+                                value={draft.burn.topology}
+                                disabled={readonly}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    burn: {
+                                      ...draft.burn!,
+                                      topology: e.target.value as BurnTopology,
+                                    },
+                                  })
+                                }
+                              >
+                                {(Object.keys(TOPO_LABELS) as BurnTopology[]).map(
+                                  (topo) => (
+                                    <option key={topo} value={topo}>
+                                      {TOPO_LABELS[topo]}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
+                            <label className="note-burn-slider">
+                              <span>
+                                烧灼程度 {Math.round(draft.burn.progress * 100)}%
+                              </span>
+                              <input
+                                type="range"
+                                min={0.08}
+                                max={0.55}
+                                step={0.02}
+                                disabled={readonly}
+                                value={draft.burn.progress}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    burn: {
+                                      ...draft.burn!,
+                                      progress: Number(e.target.value),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="about-capabilities">
-                {draft.capabilities.map((cap) => {
-                  const plugin = plugins.find((p) => p.type === cap.type);
-                  if (!plugin) return null;
-                  const Panel = plugin.InspectorPanel;
-                  const locked =
-                    readonly || (cap.type === "secret" && role !== "gm");
-                  return (
-                    <section className="about-cap-section" key={cap.id}>
-                      <div className="about-cap-heading">
-                        <h3>{plugin.label}</h3>
-                        {!locked && (
-                          <div className="about-cap-actions">
-                            <button
-                              type="button"
-                              onClick={() =>
+                {/* Quick Mechanism Toggle Chips (replaces bottom dropdown & hard dividers) */}
+                {!readonly && (
+                  <div className="note-mech-bar" role="group" aria-label="桌面机制">
+                    {plugins
+                      .filter((p) => p.type !== "secret" || role === "gm")
+                      .map((p) => {
+                        const existing = draft.capabilities.find(
+                          (c) => c.type === p.type,
+                        );
+                        const active = Boolean(existing?.enabled);
+                        return (
+                          <button
+                            key={p.type}
+                            type="button"
+                            className={`note-mech-chip ${existing ? "attached" : ""} ${active ? "active" : ""}`}
+                            aria-pressed={active}
+                            onClick={() => {
+                              if (!existing) {
                                 setDraft({
                                   ...draft,
-                                  capabilities: draft.capabilities.map((c) =>
-                                    c.id === cap.id
-                                      ? { ...c, enabled: !c.enabled }
-                                      : c,
-                                  ),
-                                })
-                              }
-                            >
-                              {cap.enabled ? "停用" : "启用"}
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`卸载${plugin.label}`}
-                              onClick={() =>
+                                  capabilities: [
+                                    ...draft.capabilities,
+                                    createCapability(p.type),
+                                  ],
+                                });
+                              } else {
                                 setDraft({
                                   ...draft,
                                   capabilities: draft.capabilities.filter(
-                                    (c) => c.id !== cap.id,
+                                    (c) => c.type !== p.type,
                                   ),
-                                })
+                                });
                               }
-                            >
-                              X
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {cap.enabled && (
-                        <Panel
-                          data={cap.data}
-                          readonly={locked}
-                          userId={userId}
-                          isGM={role === "gm"}
-                          canAct={role !== "observer"}
-                          members={store.getSnapshot().members}
-                          onChange={(data) =>
-                            setDraft({
-                              ...draft,
-                              capabilities: draft.capabilities.map((c) =>
-                                c.id === cap.id ? { ...c, data } : c,
-                              ),
-                            })
-                          }
-                          onTriggerAction={async (action) => {
-                            if (busy) return;
-                            setBusy(true);
-                            try {
-                              let id = note?.id;
-                              if (!readonly) {
-                                if (!draft.title.trim())
-                                  throw new Error("请先写一个标题。");
-                                if (id)
-                                  await store.patch(
-                                    id,
-                                    notePatch(),
-                                    baseline.current,
-                                  );
-                                else
-                                  id = (await store.create(notePatch())).id;
-                              }
-                              await onRoll(action.notation, action.label, id);
-                            } catch (cause) {
-                              setError(errorText(cause));
-                            } finally {
-                              setBusy(false);
-                            }
-                          }}
-                        />
-                      )}
-                    </section>
-                  );
-                })}
-              </div>
+                            }}
+                          >
+                            <i aria-hidden="true">{p.icon}</i>
+                            <span>{existing ? p.label : `＋ ${p.label}`}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
 
-              {!readonly && (
-                <label className="about-add-cap">
-                  <span>添加能力</span>
-                  <select
-                    aria-label="添加能力"
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value)
-                        setDraft({
-                          ...draft,
-                          capabilities: [
-                            ...draft.capabilities,
-                            createCapability(e.target.value as any),
-                          ],
-                        });
-                    }}
-                  >
-                    <option value="">选择…</option>
-                    {plugins
-                      .filter(
-                        (p) =>
-                          !draft.capabilities.some((c) => c.type === p.type) &&
-                          (p.type !== "secret" || role === "gm"),
-                      )
-                      .map((p) => (
-                        <option key={p.type} value={p.type}>
-                          {p.label}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              )}
-            </div>
-          )}
+                {draft.capabilities.some((cap) =>
+                  plugins.some((p) => p.type === cap.type),
+                ) && (
+                  <div className="about-capabilities">
+                    {draft.capabilities.map((cap) => {
+                      const plugin = plugins.find((p) => p.type === cap.type);
+                      if (!plugin) return null;
+                      const Panel = plugin.InspectorPanel;
+                      const locked =
+                        readonly || (cap.type === "secret" && role !== "gm");
+                      return (
+                        <section
+                          className={`note-cap-card ${cap.enabled ? "is-enabled" : "is-paused"}`}
+                          key={cap.id}
+                        >
+                          <header className="note-cap-card-head">
+                            <div className="note-cap-title">
+                              <i aria-hidden="true">{plugin.icon}</i>
+                              <h3>{plugin.label}</h3>
+                            </div>
+                            {!locked && (
+                              <div className="about-cap-actions">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDraft({
+                                      ...draft,
+                                      capabilities: draft.capabilities.map((c) =>
+                                        c.id === cap.id
+                                          ? { ...c, enabled: !c.enabled }
+                                          : c,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  {cap.enabled ? "停用" : "启用"}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`移除${plugin.label}`}
+                                  onClick={() =>
+                                    setDraft({
+                                      ...draft,
+                                      capabilities: draft.capabilities.filter(
+                                        (c) => c.id !== cap.id,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
+                          </header>
+                          {cap.enabled && (
+                            <div className="note-cap-card-body">
+                              <Panel
+                                data={cap.data}
+                                readonly={locked}
+                                userId={userId}
+                                isGM={role === "gm"}
+                                canAct={role !== "observer"}
+                                members={store.getSnapshot().members}
+                                onChange={(data) =>
+                                  setDraft({
+                                    ...draft,
+                                    capabilities: draft.capabilities.map((c) =>
+                                      c.id === cap.id ? { ...c, data } : c,
+                                    ),
+                                  })
+                                }
+                                onTriggerAction={async (action) => {
+                                  if (busy) return;
+                                  setBusy(true);
+                                  try {
+                                    let id = note?.id;
+                                    if (!readonly) {
+                                      if (!draft.title.trim())
+                                        throw new Error("请先写一个标题。");
+                                      if (id)
+                                        await store.patch(
+                                          id,
+                                          notePatch(),
+                                          baseline.current,
+                                        );
+                                      else
+                                        id = (await store.create(notePatch())).id;
+                                    }
+                                    await onRoll(action.notation, action.label, id);
+                                  } catch (cause) {
+                                    setError(errorText(cause));
+                                  } finally {
+                                    setBusy(false);
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </fieldset>
       )}

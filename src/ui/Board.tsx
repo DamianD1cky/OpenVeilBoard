@@ -136,6 +136,7 @@ export function Board({
     [quickDir, setQuickDir] = useState<EdgeDirection>("none"),
     [hovered, setHovered] = useState<string | null>(null),
     [pinHovered, setPinHovered] = useState<string | null>(null),
+    [diceBtnHovered, setDiceBtnHovered] = useState<string | null>(null),
     [archivePullId, setArchivePullId] = useState<string | null>(null),
     [linkStart, setLinkStart] = useState<string | null>(null);
   const [error, setError] = useState(""),
@@ -410,6 +411,22 @@ export function Board({
     onPinClick: (id) => {
       handlePinClick(id);
     },
+    onDiceButtonHover: (id) => {
+      setDiceBtnHovered(id);
+    },
+    onCardRoll: (id) => {
+      if (room.role === "observer" || rolling) return;
+      const target = store.getSnapshot().notes.find((n) => n.id === id);
+      const diceCap = target?.capabilities.find(
+        (c) => c.enabled && c.type === "dice_action",
+      );
+      if (!target || !diceCap) return;
+      void roll(
+        String(diceCap.data?.notation || "1d20"),
+        String(diceCap.data?.label || target.title || ""),
+        target.id,
+      );
+    },
     onPointerDown: () => {
       setHoverBlocked(true);
       setHovered(null);
@@ -530,6 +547,7 @@ export function Board({
     if (activeModal) {
       setHoveredDice(null);
       setPinHovered(null);
+      setDiceBtnHovered(null);
       setLinkStart(null);
       setQuickEdge(null);
     }
@@ -589,6 +607,12 @@ export function Board({
   const pinHoverNote = pinHovered
     ? (state.notes.find((n) => n.id === pinHovered) ?? null)
     : null;
+  const diceBtnNote = diceBtnHovered
+    ? (state.notes.find((n) => n.id === diceBtnHovered) ?? null)
+    : null;
+  const diceBtnCap = diceBtnNote?.capabilities.find(
+    (c) => c.enabled && c.type === "dice_action",
+  );
   const pinHint = pullNote
     ? `松手将「${pullNote.title}」放回台面`
     : isArchiveView && hoverNote
@@ -599,7 +623,9 @@ export function Board({
           : `已系住「${linkStartNote.title}」图钉 · 点击另一枚图钉连线 · Esc 取消`
         : pinHoverNote
           ? `点击「${pinHoverNote.title}」图钉连线`
-          : null;
+          : diceBtnNote && diceBtnCap
+            ? `点击直接投掷 · ⚄ ${diceBtnCap.data?.label ? `${diceBtnCap.data.label} ` : ""}${diceBtnCap.data?.notation || "1d20"}`
+            : null;
   const selectedId = route.kind === "note" ? route.noteId : null;
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)

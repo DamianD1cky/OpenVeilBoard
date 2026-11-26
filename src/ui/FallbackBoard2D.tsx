@@ -25,6 +25,8 @@ export interface BoardCallbacks {
   onLinkEnd: (id: string | null) => void;
   onPinClick?: (id: string) => void;
   onPinHover?: (id: string | null) => void;
+  onDiceButtonHover?: (id: string | null) => void;
+  onCardRoll?: (id: string) => void;
   canEdit: (note: Note) => boolean;
   canLink?: () => boolean;
   canRoll?: () => boolean;
@@ -293,6 +295,9 @@ export function FallbackBoard2D({
           const clockCap = note.capabilities.find(
             (c) => c.enabled && c.type === "event_clock",
           );
+          const diceCap = note.capabilities.find(
+            (c) => c.enabled && c.type === "dice_action",
+          );
           return (
             <article
               tabIndex={disabled ? -1 : 0}
@@ -355,11 +360,31 @@ export function FallbackBoard2D({
               )}
               <h3>{note.title}</h3>
               <p>{note.body.replace(/[#*`>]/g, "")}</p>
-              {clockCap && (
+              {(clockCap || diceCap) && (
                 <div className="paper-badges">
-                  <span>
-                    ◴ {clockCap.data.name || "事件钟"} {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
-                  </span>
+                  {diceCap && (
+                    <button
+                      type="button"
+                      className="card-dice-trigger"
+                      disabled={!(callbacks.canRoll?.() ?? true)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        callbacks.onCardRoll?.(note.id);
+                      }}
+                    >
+                      ⚄{" "}
+                      {diceCap.data.label
+                        ? `${diceCap.data.label} · ${diceCap.data.notation || "1d20"}`
+                        : `投掷 ${diceCap.data.notation || "1d20"}`}
+                      {diceCap.data.last != null ? ` (${diceCap.data.last})` : ""}
+                    </button>
+                  )}
+                  {clockCap && (
+                    <span>
+                      ◴ {clockCap.data.name || "事件钟"} {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
+                    </span>
+                  )}
                 </div>
               )}
             </article>
