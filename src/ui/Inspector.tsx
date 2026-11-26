@@ -634,7 +634,27 @@ export function Inspector({
             ) : null}
           </div>
 
-          {/* Right Column: Body Reader/Editor, Meta Pills & Controls (respects ArchiveWell below) */}
+          {/* Left-Bottom: Giant Editorial Hero Typography (Branch/Veilboard Polaroid Signature) */}
+          <div className="note-hero-zone">
+            <textarea
+              ref={titleRef}
+              className={`note-hero-title ${heroSizeClass}`}
+              aria-label="便签标题"
+              rows={1}
+              maxLength={80}
+              placeholder="写下标题"
+              value={draft.title}
+              readOnly={readonly}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.preventDefault();
+              }}
+              onChange={(e) =>
+                setDraft({ ...draft, title: e.target.value.replace(/\n/g, "") })
+              }
+            />
+          </div>
+
+          {/* Right Column: Body Reader/Editor, Meta Pills, Controls & Capabilities Drawer */}
           <div className="note-meta-col">
             <div
               className={`note-meta-body-wrap ${preview ? "is-reading" : "is-editing"} ${!readonly && preview ? "can-click-edit" : ""}`}
@@ -854,31 +874,9 @@ export function Inspector({
                 载入最新版本
               </button>
             )}
-          </div>
-
-          {/* Left-Bottom: Giant Editorial Hero Typography (Branch/Veilboard Polaroid Signature) */}
-          <div className="note-hero-zone">
-            <textarea
-              ref={titleRef}
-              className={`note-hero-title ${heroSizeClass}`}
-              aria-label="便签标题"
-              rows={1}
-              maxLength={80}
-              placeholder="写下标题"
-              value={draft.title}
-              readOnly={readonly}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.preventDefault();
-              }}
-              onChange={(e) =>
-                setDraft({ ...draft, title: e.target.value.replace(/\n/g, "") })
-              }
-            />
-          </div>
-
-          {/* Expandable Tools / Burn / Card Preview / Capabilities Glass Drawer */}
-          {showTools && (
-            <div className="about-drawer note-tools-drawer">
+            {/* Expandable Tools / Burn / Card Preview / Capabilities inside right column (never covers projection) */}
+            {showTools && (
+              <div className="about-drawer note-tools-drawer">
               <div className="note-drawer-top">
                 {cardThumb && (
                   <figure className="note-card-thumb">
@@ -1185,6 +1183,7 @@ export function Inspector({
               )}
             </div>
           )}
+          </div>
         </fieldset>
       )}
 

@@ -160,6 +160,7 @@ function Application({
           demo={demo}
           accountOpen={account}
           onAccount={() => setAccount((prev) => !prev)}
+          onCloseAccount={() => setAccount(false)}
           onRooms={() => {
             if (demo) return;
             setAuto(false);

@@ -1542,54 +1542,61 @@ h3 {
   border-radius: 999px;
 }
 .about-drawer {
-  width: min(520px, 100%);
-  margin-top: 8px;
-  padding-top: 22px;
-  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tray-line);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   text-align: left;
-  animation: in-frame-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  color: var(--tray-ink);
+  animation: in-frame-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .about-meta-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 14px 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
   align-items: end;
 }
 .about-meta-row label,
 .about-add-cap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-family: var(--font-display);
+  gap: 5px;
+  font-family: var(--font-body);
   font-size: 11px;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.68);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--tray-ink-muted);
 }
 .about-drawer select,
 .about-drawer input,
 .about-drawer textarea {
   font-family: var(--font-body);
   font-size: 13px;
-  color: #ffffff;
+  color: var(--tray-ink-strong);
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.36);
+  border-bottom: 1px solid var(--tray-line);
   border-radius: 0;
-  padding: 6px 2px;
+  padding: 5px 2px;
   resize: none;
 }
 .about-drawer select option {
-  background: #3d3830;
-  color: #ffffff;
+  background: var(--tray-select-bg);
+  color: var(--tray-ink-strong);
 }
 .about-drawer select:focus,
 .about-drawer input:focus,
 .about-drawer textarea:focus {
   outline: none;
-  border-bottom-color: #ffffff;
+  border-bottom-color: var(--tray-line-strong);
+}
+.about-drawer input::placeholder,
+.about-drawer textarea::placeholder {
+  color: var(--tray-ink-subtle);
+  opacity: 1;
 }
 .about-cover-actions {
   display: flex;
@@ -1597,31 +1604,32 @@ h3 {
   gap: 8px;
 }
 .about-pill-btn {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 11px;
   font-weight: 500;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.46);
-  border-radius: 999px;
-  padding: 6px 12px;
+  color: var(--tray-ink);
+  border: 1px solid var(--tray-line);
+  border-radius: 2px;
+  padding: 5px 10px;
   cursor: pointer;
   background: transparent;
-  transition: opacity 0.2s ease, background-color 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 .about-pill-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--tray-line-strong);
+  background: var(--tray-wash);
 }
 .about-capabilities {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 .about-cap-section {
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  padding-top: 12px;
+  border-top: 1px solid var(--tray-line);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .about-cap-heading {
   display: flex;
@@ -1629,53 +1637,60 @@ h3 {
   justify-content: space-between;
 }
 .about-cap-heading h3 {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  color: #ffffff;
+  letter-spacing: 0.08em;
+  color: var(--tray-ink-strong);
 }
 .about-cap-actions {
   display: flex;
-  gap: 14px;
+  gap: 10px;
 }
 .about-cap-actions button {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--tray-ink-muted);
   background: transparent;
-  transition: opacity 0.2s ease;
+  transition: color 0.16s ease;
 }
 .about-cap-actions button:hover {
-  opacity: 0.4;
+  color: var(--tray-ink-strong);
+  background: transparent;
 }
 .about-drawer .cap-panel,
 .about-drawer label {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--tray-ink-muted);
 }
 .about-drawer .clock-actions button,
 .about-drawer .clock-controls button,
-.about-drawer .cap-panel button:not(.clock-segment) {
-  font-family: var(--font-display);
+.about-drawer .cap-panel button:not(.clock-segment),
+.about-drawer .event-clock-panel .inline-actions button {
+  font-family: var(--font-body);
   font-size: 11px;
-  color: #ffffff;
+  color: var(--tray-ink);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.44);
-  border-radius: 999px;
-  padding: 5px 14px;
+  border: 1px solid var(--tray-line);
+  border-radius: 2px;
+  padding: 4px 10px;
 }
 .about-drawer .clock-actions button:hover,
 .about-drawer .clock-controls button:hover,
-.about-drawer .cap-panel button:not(.clock-segment):hover {
-  background: rgba(255, 255, 255, 0.14);
+.about-drawer .cap-panel button:not(.clock-segment):hover,
+.about-drawer .event-clock-panel .inline-actions button:hover {
+  border-color: var(--tray-line-strong);
+  background: var(--tray-wash);
+  color: var(--tray-ink-strong);
 }
-.about-drawer .clock-segment {
-  border: 1px solid rgba(255, 255, 255, 0.42);
+.about-drawer .clock-segment,
+.about-drawer .clock-segments button {
+  border: 1px solid var(--tray-line);
   background: transparent;
 }
-.about-drawer .clock-segment[aria-pressed="true"] {
-  background: #ffffff;
-  border-color: #ffffff;
+.about-drawer .clock-segment[aria-pressed="true"],
+.about-drawer .clock-segments button.filled {
+  background: var(--tray-ink-strong);
+  border-color: var(--tray-ink-strong);
 }
 .about-archive {
   width: min(780px, 100%);
@@ -1925,17 +1940,22 @@ h3 {
 }
 
 /* ---------- Phase 4: Polaroid-Stage Note Editor (Big Hero + Floor Projection + Preview) ---------- */
+.in-frame-scroll:has(.note-stage) {
+  overflow-y: hidden;
+  padding-bottom: clamp(16px, 2.4vh, 26px);
+}
 .note-stage {
   position: relative;
   flex: 1;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   width: 100%;
   margin: 0;
   padding: 4px 0 0;
   border: none;
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(240px, 0.95fr);
-  grid-template-rows: minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(0, 1.55fr) minmax(290px, 1.05fr);
+  grid-template-rows: minmax(200px, 1fr) auto;
   grid-template-areas:
     "projection meta"
     "hero meta";
@@ -2129,15 +2149,25 @@ h3 {
   outline: none;
 }
 
-/* Right Column: Metadata, Body, Pills & Actions */
+/* Right Column: Metadata, Body, Pills, Actions & Capabilities (Independently Scrollable) */
 .note-meta-col {
   grid-area: meta;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   gap: 14px;
-  padding-bottom: calc(var(--well-h, 104px) * 0.28);
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-right: 4px;
+  padding-bottom: 14px;
+  margin-bottom: calc(var(--well-h, 110px) + 10px);
   min-width: 0;
+}
+.note-meta-col::-webkit-scrollbar {
+  display: none;
 }
 .note-meta-body-wrap {
   position: relative;
@@ -2324,64 +2354,64 @@ h3 {
   background: rgba(160, 44, 30, 0.42) !important;
 }
 
-/* Expandable Drawer with Card Preview & Burn Controls */
+/* Expandable Drawer with Card Preview & Burn Controls (Contained Strictly in Right Column) */
 .note-tools-drawer {
-  grid-column: 1 / -1;
-  width: min(760px, 100%);
+  width: 100%;
   max-width: 100%;
-  margin-top: 8px;
-  background: rgba(18, 16, 13, 0.88) !important;
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
-  padding: 18px 20px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+  margin-top: 4px;
+  background: transparent !important;
+  backdrop-filter: none;
+  border: none;
+  border-top: 1px solid var(--tray-line);
+  border-radius: 0;
+  padding: 14px 0 6px;
+  box-shadow: none;
 }
 .note-drawer-top {
   display: flex;
-  gap: 18px;
+  gap: 14px;
   align-items: flex-start;
   flex-wrap: wrap;
 }
 .note-card-thumb {
   margin: 0;
-  flex: 0 0 118px;
+  flex: 0 0 86px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 .note-card-thumb img {
-  width: 118px;
-  border-radius: 3px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+  width: 86px;
+  border-radius: 2px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
 }
 .note-card-thumb figcaption {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.72);
+  font-size: 10px;
+  color: var(--tray-ink-muted);
   text-align: center;
 }
 .note-drawer-controls {
   flex: 1;
-  min-width: 240px;
+  min-width: 190px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .note-burn-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-end;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 8px;
+  border-top: 1px solid var(--tray-line);
 }
 .note-burn-controls label {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--tray-ink-muted);
 }
 .note-burn-slider {
   min-width: 150px;
@@ -2472,14 +2502,23 @@ body:has(.note-lightbox-overlay) .corner-bar,
 }
 
 @media (max-width: 760px) {
+  .in-frame-scroll:has(.note-stage) {
+    overflow-y: auto;
+  }
   .note-stage,
   .note-stage.no-media {
+    height: auto;
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     grid-template-areas:
       "projection"
       "hero"
       "meta";
+  }
+  .note-meta-col {
+    overflow-y: visible;
+    max-height: none;
+    margin-bottom: 0;
   }
   .note-projection-zone {
     min-height: 170px;

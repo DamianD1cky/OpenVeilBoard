@@ -64,6 +64,7 @@ export function Board({
   accountOpen = false,
   onRooms,
   onAccount,
+  onCloseAccount,
 }: {
   room: ActiveCampaignAccess;
   session: AppSession;
@@ -72,6 +73,7 @@ export function Board({
   accountOpen?: boolean;
   onRooms: () => void;
   onAccount: () => void;
+  onCloseAccount?: () => void;
 }) {
   const placementScene = useRef(scene);
   placementScene.current = scene;
@@ -142,6 +144,11 @@ export function Board({
       setEdge(null);
     }
   }, [accountOpen]);
+  useEffect(() => {
+    if (route.kind !== "home" && accountOpen) {
+      onCloseAccount?.();
+    }
+  }, [route.kind, accountOpen, onCloseAccount]);
   const lastRoll = useRef<string | null>(null),
     lastRollMeta = useRef<{ notation: string; label: string } | null>(null),
     rollFromCorner = useRef(false),
@@ -332,11 +339,13 @@ export function Board({
       navigateBoard("/archive");
     },
     onClock: () => {
+      onCloseAccount?.();
       setRoomMenu(false);
       setEdge(null);
       setOverlay("clock");
     },
     onEdge: (nextEdge) => {
+      onCloseAccount?.();
       setRoomMenu(false);
       setOverlay(null);
       setHovered(null);
@@ -502,6 +511,7 @@ export function Board({
                 if (next) {
                   setOverlay(null);
                   setEdge(null);
+                  onCloseAccount?.();
                 }
               }}
             >
@@ -514,6 +524,7 @@ export function Board({
               <>
                 <button
                   onClick={() => {
+                    onCloseAccount?.();
                     setRoomMenu(false);
                     setOverlay(null);
                     setEdge(null);
@@ -525,6 +536,7 @@ export function Board({
                 <button
                   aria-pressed={linking}
                   onClick={() => {
+                    onCloseAccount?.();
                     setRoomMenu(false);
                     setLinking(!linking);
                     setLinkStart(null);
@@ -535,6 +547,7 @@ export function Board({
                 <button
                   aria-pressed={overlay === "dice"}
                   onClick={() => {
+                    onCloseAccount?.();
                     setRoomMenu(false);
                     setEdge(null);
                     setOverlay(overlay === "dice" ? null : "dice");
@@ -545,6 +558,7 @@ export function Board({
                 <button
                   aria-pressed={overlay === "surface"}
                   onClick={() => {
+                    onCloseAccount?.();
                     setRoomMenu(false);
                     setEdge(null);
                     setOverlay(overlay === "surface" ? null : "surface");
