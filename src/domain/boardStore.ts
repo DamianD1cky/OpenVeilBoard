@@ -194,6 +194,7 @@ export function createBoardStore(
       pendingEdges.delete(item.id);
       const edges = others().filter((edge) => !saved || !sameEdge(edge, saved));
       emit({ edges: saved ? [...edges, saved] : edges });
+      return saved;
     } catch (cause) {
       pendingEdges.delete(item.id);
       const edges = others();
@@ -204,8 +205,8 @@ export function createBoardStore(
       throw cause;
     }
   }
-  async function edge(from: string, to: string) {
-    if (from === to) return;
+  async function edge(from: string, to: string): Promise<NoteEdge | null> {
+    if (from === to) return null;
     const item: NoteEdge = {
       id: crypto.randomUUID(),
       fromNoteId: from,
@@ -214,8 +215,9 @@ export function createBoardStore(
       color: "#b83227",
       style: "rope",
     };
-    if (state.edges.some((existing) => sameEdge(existing, item))) return;
-    await writeEdge(item);
+    const existing = state.edges.find((entry) => sameEdge(entry, item));
+    if (existing) return existing;
+    return (await writeEdge(item)) ?? item;
   }
   const unsubscribe = repository.subscribe(
     () => void refresh(),

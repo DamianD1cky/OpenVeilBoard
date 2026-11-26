@@ -40,11 +40,11 @@ export const TRAY_MENU_ZONES: Record<TrayMenuKey, NormalizedRect> = {
     preferDir: "down",
   },
   edge: {
-    left: -0.22,
-    right: 0.22,
-    top: -0.2,
-    bottom: 0.24,
-    preferDir: "up",
+    left: -0.25,
+    right: 0.25,
+    top: -0.38,
+    bottom: 0.38,
+    preferDir: "left",
   },
   account: {
     left: -0.25,

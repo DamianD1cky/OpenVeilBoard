@@ -10,6 +10,10 @@ import {
   Vector3,
 } from "../engine/index.js";
 import { visibleEdges } from "../domain/geometry.js";
+import {
+  classifyEdgeTag,
+  parseEdgeLabel,
+} from "../domain/edgeRelations.ts";
 
 const STRING_SEGMENTS = 10;
 const RADIAL_SEGMENTS = 6;
@@ -120,18 +124,23 @@ function createStringMaterial(edge) {
 }
 
 class ClueLineTag {
-  constructor(text) {
+  constructor(edge) {
+    this.edge = edge;
+    const { text, direction } = parseEdgeLabel(edge.label || "");
     this.text = text;
-    this.width = Math.min(0.46, Math.max(0.11, 0.068 + text.length * 0.025));
-    this.height = 0.044;
+    this.direction = direction;
+    this.flipped = false;
+    const displayLen = text.length + (direction !== "none" ? 1.4 : 0);
+    this.width = Math.min(0.46, Math.max(0.125, 0.072 + displayLen * 0.026));
+    this.height = 0.048;
     this.canvas = document.createElement("canvas");
     this.canvas.width = 512;
-    this.canvas.height = Math.max(64, Math.round((512 * this.height) / this.width));
+    this.canvas.height = Math.max(72, Math.round((512 * this.height) / this.width));
     this.texture = new CanvasTexture(this.canvas);
     this.texture.colorSpace = SRGBColorSpace;
     this.material = new MeshStandardMaterial({
       map: this.texture,
-      roughness: 0.88,
+      roughness: 0.86,
       metalness: 0,
       transparent: true,
     });
@@ -142,37 +151,79 @@ class ClueLineTag {
     this.object.rotation.x = -Math.PI / 2;
     this.object.castShadow = true;
     this.object.receiveShadow = true;
-    this.object.renderOrder = 4;
-    this.draw(text);
+    this.object.renderOrder = 6;
+    this.draw();
   }
 
-  draw(text) {
+  setFlipped(flipped) {
+    if (this.flipped === flipped || this.direction !== "forward") return;
+    this.flipped = flipped;
+    this.draw();
+  }
+
+  draw() {
     const ctx = this.canvas.getContext("2d", { colorSpace: "srgb" });
     const { width, height } = this.canvas;
+    const vis = classifyEdgeTag(this.edge.label || "", this.edge.style || "rope");
     ctx.clearRect(0, 0, width, height);
-    // Warm kraft evidence slip
-    ctx.fillStyle = "#efe5cf";
+
+    // Aged cardstock slip base
+    ctx.fillStyle = vis.paper;
     ctx.fillRect(4, 4, width - 8, height - 8);
-    ctx.strokeStyle = "rgba(92, 74, 52, 0.42)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(5.5, 5.5, width - 11, height - 11);
-    // Small twine-tie holes at ends
-    ctx.fillStyle = "rgba(80, 62, 42, 0.35)";
+
+    // Subtle paper fiber sheen
+    ctx.fillStyle = "rgba(84, 62, 36, 0.045)";
+    ctx.fillRect(4, height * 0.56, width - 8, height * 0.4 - 4);
+
+    // Outer stamp border
+    ctx.strokeStyle = vis.border;
+    ctx.lineWidth = vis.doubleFrame ? 3.5 : 2.8;
+    ctx.strokeRect(6, 6, width - 12, height - 12);
+
+    // Hostile / conflict double-line inner stamp frame
+    if (vis.doubleFrame) {
+      ctx.strokeStyle = vis.border;
+      ctx.lineWidth = 1.6;
+      ctx.strokeRect(12, 12, width - 24, height - 24);
+    }
+
+    // Punched twine-tie holes at both ends
+    ctx.fillStyle = "rgba(72, 54, 34, 0.36)";
     ctx.beginPath();
-    ctx.arc(18, height / 2, 4, 0, Math.PI * 2);
-    ctx.arc(width - 18, height / 2, 4, 0, Math.PI * 2);
+    ctx.arc(20, height / 2, 4.2, 0, Math.PI * 2);
+    ctx.arc(width - 20, height / 2, 4.2, 0, Math.PI * 2);
     ctx.fill();
-    // Crisp dark ink label
-    ctx.fillStyle = "#332a1e";
+
+    // Subtle wax/ink accent dot for bond/intimate tags
+    if (vis.sealDot) {
+      ctx.fillStyle = vis.accent;
+      ctx.beginPath();
+      ctx.arc(38, height / 2, 4.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Compose directional display text (flipping arrow when tag rotates 180deg to stay upright)
+    let display = this.text;
+    if (this.direction === "both") {
+      display = `↔ ${this.text} ↔`;
+    } else if (this.direction === "forward") {
+      display = this.flipped ? `← ${this.text}` : `${this.text} →`;
+    }
+
+    ctx.fillStyle = vis.ink;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    let size = Math.round(height * 0.56);
-    ctx.font = `600 ${size}px "PingFang SC", "Noto Sans CJK SC", ui-monospace, sans-serif`;
-    while (ctx.measureText(text).width > width * 0.78 && size > 14) {
+    const family = vis.serif
+      ? `"Songti SC", "Noto Serif CJK SC", Georgia, serif`
+      : `"PingFang SC", "Noto Sans CJK SC", ui-monospace, sans-serif`;
+    let size = Math.round(height * 0.54);
+    ctx.font = `700 ${size}px ${family}`;
+    const maxW = width * (vis.sealDot ? 0.68 : 0.76);
+    while (ctx.measureText(display).width > maxW && size > 14) {
       size -= 2;
-      ctx.font = `600 ${size}px "PingFang SC", "Noto Sans CJK SC", ui-monospace, sans-serif`;
+      ctx.font = `700 ${size}px ${family}`;
     }
-    ctx.fillText(text, width / 2, height / 2 + 1);
+    ctx.fillText(display, width / 2 + (vis.sealDot ? 4 : 0), height / 2 + 1);
     this.texture.needsUpdate = true;
   }
 
@@ -261,10 +312,11 @@ export class RopeLinkLayer {
         link.mesh.material.color.set(edge.color || "#b83227");
       }
       link.edge = edge;
-      if (edge.label !== link.labelText) {
+      const tagKey = `${edge.label || ""}|${edge.style || "rope"}|${edge.color || ""}`;
+      if (tagKey !== link.tagKey) {
         link.label?.dispose();
-        link.labelText = edge.label;
-        link.label = edge.label ? new ClueLineTag(edge.label) : null;
+        link.tagKey = tagKey;
+        link.label = edge.label ? new ClueLineTag(edge) : null;
         if (link.label) {
           this.object.add(link.label.object);
           this.wake(link);
@@ -312,7 +364,11 @@ export class RopeLinkLayer {
           link.edge.fromNoteId === this.highlighted ||
           link.edge.toNoteId === this.highlighted;
       link.mesh.material.opacity = active ? 1 : 0.24;
-      if (link.label) link.label.material.opacity = active ? 1 : 0.35;
+      if (link.label) {
+        link.label.material.opacity = active ? 1 : 0.35;
+        const hovered = this.highlightedEdge === link.edge.id;
+        link.label.object.scale.setScalar(hovered ? 1.1 : 1);
+      }
     }
   }
 
@@ -365,11 +421,19 @@ export class RopeLinkLayer {
     for (const link of this.byNote.get(id) ?? []) this.wake(link);
   }
 
-  beginPreview(noteId) {
+  beginPreview(noteId, initialPoint = null) {
     this.clearPreview();
     const a = this.field.cards.get(noteId)?.anchor();
     if (!a) return;
-    const end = a.clone().add(new Vector3(0.12, 0, 0.04));
+    const end = initialPoint
+      ? new Vector3(
+          initialPoint.x,
+          initialPoint.snapped
+            ? initialPoint.y
+            : this.ctx.counter.get().floorY + 0.06,
+          initialPoint.z,
+        )
+      : a.clone();
     const material = createStringMaterial({ color: "#b83227", style: "rope" });
     const mesh = new Mesh(createTubeGeometry(STRING_SEGMENTS), material);
     mesh.castShadow = true;
@@ -392,10 +456,10 @@ export class RopeLinkLayer {
   }
 
   movePreview(point) {
-    if (this.preview) {
+    if (this.preview && point) {
       this.preview.end.set(
         point.x,
-        this.ctx.counter.get().floorY + 0.042,
+        point.snapped ? point.y : this.ctx.counter.get().floorY + 0.06,
         point.z,
       );
       this.wake(this.preview);
@@ -468,6 +532,7 @@ export class RopeLinkLayer {
     const right = this._tmpR;
     const normal = this._tmpN;
     const up = this._up;
+    const minStringY = (this.ctx.counter.get().floorY ?? 0) + 0.056;
 
     for (let i = 0; i <= STRING_SEGMENTS; i++) {
       const t = i / STRING_SEGMENTS;
@@ -475,7 +540,7 @@ export class RopeLinkLayer {
       const sway = Math.sin(t * Math.PI) * vib;
       p.set(
         a.x + dx * t + perpX * sway,
-        a.y + dy * t - sag * arch,
+        Math.max(minStringY, a.y + dy * t - sag * arch),
         a.z + dz * t + perpZ * sway,
       );
       const dArch = 4 * (1 - 2 * t);
@@ -514,13 +579,20 @@ export class RopeLinkLayer {
 
     if (link.label) {
       const midX = (a.x + b.x) * 0.5 + perpX * vib;
-      const midY = (a.y + b.y) * 0.5 - sag + 0.0055;
+      const midY = Math.max(minStringY + 0.008, (a.y + b.y) * 0.5 - sag + 0.0065);
       const midZ = (a.z + b.z) * 0.5 + perpZ * vib;
       link.label.object.position.set(midX, midY, midZ);
       // Align evidence slip along string direction, keeping Chinese text always upright
       let angle = -Math.atan2(dz, dx);
-      if (angle > Math.PI / 2) angle -= Math.PI;
-      if (angle < -Math.PI / 2) angle += Math.PI;
+      let flipped = false;
+      if (angle > Math.PI / 2) {
+        angle -= Math.PI;
+        flipped = true;
+      } else if (angle < -Math.PI / 2) {
+        angle += Math.PI;
+        flipped = true;
+      }
+      link.label.setFlipped(flipped);
       link.label.object.rotation.set(-Math.PI / 2, 0, angle);
     }
   }

@@ -75,6 +75,9 @@ export class NoteCard {
       part.castShadow = true;
     });
     this.object.add(this.pin);
+    this.pinHovered = false;
+    this.pinSelected = false;
+    this._pinWorld = new Vector3();
     this.aim = { x: 0, z: 0, lift: 0, tilt: 0, scale: 1, yaw: 0 };
     this.avoid = { x: 0, z: 0, yaw: 0 };
     this.pulseUntil = 0;
@@ -110,7 +113,7 @@ export class NoteCard {
         sleeping: false,
         update: createPolaroidWiggleUpdater(this.wiggle, this.rig.root),
       };
-      this.pin.position.set(0, 0.016, -this.height * 0.45);
+      this.pin.position.set(0, 0.02, -this.height * 0.45);
     }
     const key = JSON.stringify([
       note.title,
@@ -221,11 +224,35 @@ export class NoteCard {
     if (this.hovered === on) return;
     this.hovered = on;
     this.wakeLinks();
-    this.aim.lift = on ? 0.055 : 0;
-    this.aim.scale = on ? 1.065 : 1;
+    this.aim.lift = on ? 0.014 : 0;
+    this.aim.scale = on ? 1.055 : 1;
     const baseYaw = (-this.note.rotation * Math.PI) / 180;
     this.aim.yaw = on ? baseYaw * 0.65 : baseYaw;
     this.wakeWiggle();
+  }
+  setPinState({ hovered = this.pinHovered, selected = this.pinSelected } = {}) {
+    if (this.pinHovered === hovered && this.pinSelected === selected) return;
+    this.pinHovered = hovered;
+    this.pinSelected = selected;
+    if (selected || hovered) {
+      this.pinMaterial.emissive.set(
+        pinColors[this.note?.pinColor] ?? pinColors.red,
+      );
+      this.pinMaterial.emissiveIntensity = selected ? 0.78 : 0.42;
+    } else {
+      this.pinMaterial.emissive.set(0x000000);
+      this.pinMaterial.emissiveIntensity = 0;
+    }
+    this.wakeLinks();
+  }
+  pinHitTest(point, radius = 0.045) {
+    if (!point || this.swept || this.burningAway || !this.pin.visible) {
+      return false;
+    }
+    this.pin.getWorldPosition(this._pinWorld);
+    const dx = point.x - this._pinWorld.x;
+    const dz = point.z - this._pinWorld.z;
+    return dx * dx + dz * dz <= radius * radius;
   }
   dragTo(x, z, { latched = false, zone = null } = {}) {
     this.dragging = true;
@@ -233,16 +260,17 @@ export class NoteCard {
     if (latched && zone) {
       this.aim.x = zone.x;
       this.aim.z = zone.z + wellSeatOffsetZ(zone);
-      this.aim.lift = 0.04;
+      this.aim.lift = 0.024;
       this.aim.tilt = 0;
       this.aim.scale = fitScaleInWell(zone, this.width, this.height);
       this.aim.yaw = 0;
     } else {
       this.aim.x = x;
       this.aim.z = z;
-      this.aim.lift = 0.18;
-      this.aim.tilt = -0.1;
-      this.aim.scale = 1;
+      // Slide cleanly just above the tray surface so moving paper NEVER floats above & covers red strings
+      this.aim.lift = 0.022;
+      this.aim.tilt = -0.022;
+      this.aim.scale = 1.03;
       this.aim.yaw = (-this.note.rotation * Math.PI) / 180;
     }
     this.wakeWiggle();
@@ -308,6 +336,25 @@ export class NoteCard {
       this.object.position.y +=
         (this.floor + lift - this.object.position.y) * k;
     }
+    const targetPinY = this.pinSelected
+      ? 0.036
+      : this.pinHovered
+        ? 0.028
+        : 0.02;
+    const targetPinScale = this.pinSelected
+      ? 1.3 + Math.sin(now * 0.008) * 0.08
+      : this.pinHovered
+        ? 1.26
+        : 1;
+    const pinK = 1 - Math.exp(-18 * stepDt);
+    const prevPinY = this.pin.position.y;
+    this.pin.position.y += (targetPinY - this.pin.position.y) * pinK;
+    const nextPinScale =
+      this.pin.scale.x + (targetPinScale - this.pin.scale.x) * pinK;
+    this.pin.scale.setScalar(nextPinScale);
+    if (Math.abs(this.pin.position.y - prevPinY) > 0.0002 || this.pinSelected) {
+      this.wakeLinks();
+    }
     const simulation = this.simulation;
     if (this.wiggle && simulation) {
       this.mesh.updateWorldMatrix(true, false);
@@ -335,7 +382,7 @@ export class NoteCard {
   }
   anchor() {
     const pos = this.pin.getWorldPosition(new Vector3());
-    pos.y += 0.014;
+    pos.y += 0.028;
     return pos;
   }
   sweepOut(exitX, targetZ, lift, delaySec = 0) {

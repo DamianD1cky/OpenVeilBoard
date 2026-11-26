@@ -71,11 +71,12 @@ function fitLightboxNdc(aspect, viewW, viewH) {
   const padY = Math.min(76, viewH * 0.1);
   const availW = Math.max(120, viewW - padX * 2);
   const availH = Math.max(120, viewH - padY * 2);
+  const safeAspect = Math.max(aspect || 1, 0.08);
   let targetW = availW;
-  let targetH = targetW / Math.max(aspect, 0.1);
+  let targetH = targetW / safeAspect;
   if (targetH > availH) {
     targetH = availH;
-    targetW = targetH * Math.max(aspect, 0.1);
+    targetW = targetH * safeAspect;
   }
   const ndcW = (targetW / Math.max(viewW, 1)) * 2;
   const ndcH = (targetH / Math.max(viewH, 1)) * 2;
@@ -124,6 +125,7 @@ export class NoteProjection {
     this.scrollState = { offset: 0 };
     this.lightbox = { open: false, progress: 0, index: 0 };
     this.aspects = new Map();
+    this.bounds = null;
     this.box = { left: -1, right: 1, top: -0.5, bottom: 0.5, y: 0, width: 2, height: 1 };
 
     this.cleanups = [
@@ -287,25 +289,62 @@ export class NoteProjection {
     });
   }
 
+  setBounds(bounds = null) {
+    if (!bounds) {
+      if (this.bounds !== null) {
+        this.bounds = null;
+        this.layout();
+      }
+      return;
+    }
+    const left = Math.max(0.01, Math.min(0.9, Number(bounds.left) || 0));
+    const right = Math.max(left + 0.08, Math.min(0.99, Number(bounds.right) || 1));
+    const top = Math.max(0.01, Math.min(0.9, Number(bounds.top) || 0));
+    const bottom = Math.max(top + 0.08, Math.min(0.99, Number(bounds.bottom) || 1));
+    const prev = this.bounds;
+    if (
+      prev &&
+      Math.abs(prev.left - left) < 0.002 &&
+      Math.abs(prev.right - right) < 0.002 &&
+      Math.abs(prev.top - top) < 0.002 &&
+      Math.abs(prev.bottom - bottom) < 0.002
+    ) {
+      return;
+    }
+    this.bounds = { left, right, top, bottom };
+    this.layout();
+  }
+
   layout() {
     const { layout, floorY } = this.ctx.counter.get();
     if (!layout) return;
     const viewW = this.app.size.width || 1280;
     const compact = viewW < 760 || layout.indentWidth / Math.max(layout.indentHeight, 0.1) < 0.92;
-    const padX = layout.indentWidth * (compact ? 0.055 : 0.048);
-    const padTop = layout.indentHeight * (compact ? 0.11 : 0.105);
-    const left = -layout.indentWidth * 0.5 + padX;
-    // Leave right ~36% for metadata/editor column on desktop, bottom ~38% for controls + giant hero title
-    const right = compact
-      ? layout.indentWidth * 0.5 - padX
-      : layout.indentWidth * 0.5 - Math.max(layout.indentWidth * 0.36, 0.78);
-    const top = -layout.indentHeight * 0.5 + padTop;
-    const bottom = compact
-      ? layout.indentHeight * 0.0
-      : layout.indentHeight * 0.5 - Math.max(layout.indentHeight * 0.38, 0.56);
+    let left, right, top, bottom;
+    if (this.bounds) {
+      const inset = 0.035;
+      const innerW = Math.max(0.2, layout.indentWidth - inset * 2);
+      const innerH = Math.max(0.2, layout.indentHeight - inset * 2);
+      left = -innerW * 0.5 + this.bounds.left * innerW;
+      right = -innerW * 0.5 + this.bounds.right * innerW;
+      top = -innerH * 0.5 + this.bounds.top * innerH;
+      bottom = -innerH * 0.5 + this.bounds.bottom * innerH;
+    } else {
+      const padX = layout.indentWidth * (compact ? 0.055 : 0.048);
+      const padTop = layout.indentHeight * (compact ? 0.11 : 0.105);
+      left = -layout.indentWidth * 0.5 + padX;
+      // Conservative desktop fallback: keep strictly left of the ~43% right editor column
+      right = compact
+        ? layout.indentWidth * 0.5 - padX
+        : layout.indentWidth * 0.5 - Math.max(layout.indentWidth * 0.45, 0.92);
+      top = -layout.indentHeight * 0.5 + padTop;
+      bottom = compact
+        ? layout.indentHeight * 0.0
+        : layout.indentHeight * 0.5 - Math.max(layout.indentHeight * 0.28, 0.42);
+    }
 
-    const width = Math.max(0.3, right - left);
-    const height = Math.max(0.25, bottom - top);
+    const width = Math.max(0.24, right - left);
+    const height = Math.max(0.2, bottom - top);
     const centerZ = (top + bottom) * 0.5;
     const y = (floorY ?? -layout.indentDepth + 0.0016) + 0.0012;
 
@@ -326,11 +365,11 @@ export class NoteProjection {
     this.shared.uCompact.value = compact ? 1 : 0;
     this.shared.uVertical.value = 0;
 
-    // Fit each slide proportionally into the projection box
-    const maxW = width * 0.94;
+    // Fit each slide proportionally inside the exact projection viewport without overflowing
+    const maxW = width * 0.96;
     const maxH = height * 0.94;
     for (const entry of this.slides.values()) {
-      const asp = Math.max(0.25, Math.min(4, entry.aspect || 16 / 10));
+      const asp = Math.max(0.08, Math.min(12, entry.aspect || 16 / 10));
       let w = maxW;
       let h = w / asp;
       if (h > maxH) {

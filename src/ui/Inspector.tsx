@@ -122,6 +122,7 @@ export function Inspector({
   );
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const projectionHitRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!note) return;
@@ -195,8 +196,45 @@ export function Inspector({
     return () => {
       scene?.closeProjectionLightbox?.(true);
       scene?.setNoteProjection?.({ active: false, items: [] });
+      scene?.setNoteProjectionBounds?.(null);
     };
   }, [scene]);
+
+  // Measure the exact screen-space projection viewport (.note-projection-hit) relative to
+  // the recessed tray (indentRect) so long-edge images NEVER extend into the right editor column.
+  useEffect(() => {
+    if (!scene?.setNoteProjectionBounds || !indentRect || !indentRect.width || !indentRect.height) {
+      return;
+    }
+    const el = projectionHitRef.current;
+    if (!el || sealed || mediaItems.length === 0) {
+      scene.setNoteProjectionBounds(null);
+      return;
+    }
+    const syncBounds = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 16 || rect.height < 16) return;
+      scene.setNoteProjectionBounds({
+        left: (rect.left - indentRect.left) / indentRect.width,
+        right: (rect.right - indentRect.left) / indentRect.width,
+        top: (rect.top - indentRect.top) / indentRect.height,
+        bottom: (rect.bottom - indentRect.top) / indentRect.height,
+      });
+    };
+    syncBounds();
+    const raf = requestAnimationFrame(syncBounds);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(syncBounds);
+      ro.observe(el);
+    }
+    window.addEventListener("resize", syncBounds);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+      window.removeEventListener("resize", syncBounds);
+    };
+  }, [scene, indentRect, sealed, mediaItems.length]);
 
   // Capture Escape when lightbox is open so it returns to floor projection first
   useEffect(() => {
@@ -531,6 +569,7 @@ export function Inspector({
               <>
                 {/* Clickable optical viewport over the WebGPU floor slide */}
                 <button
+                  ref={projectionHitRef}
                   type="button"
                   className="note-projection-hit"
                   aria-label="全屏预览线索照片"

@@ -21,6 +21,9 @@ export class NoteField {
     this.enabled = false;
     this.avoidZone = null;
     this.diceHovered = false;
+    this.linkStartId = null;
+    this.hoveredPinCard = null;
+    this.lastPointerPoint = null;
     this.canvas = ctx.app.canvas;
     this.handlers = {
       pointerdown: (e) => this.down(e),
@@ -29,7 +32,10 @@ export class NoteField {
       pointercancel: () => this.cancel(),
       contextmenu: (e) => this.contextMenu(e),
       pointerleave: () => {
-        if (!this.downState) this.hover(null);
+        if (!this.downState) {
+          this.setHoveredPin(null);
+          this.hover(null);
+        }
       },
     };
     Object.entries(this.handlers).forEach(([key, handler]) =>
@@ -253,6 +259,40 @@ export class NoteField {
         }) ?? null
     );
   }
+  pinAt(point) {
+    if (!point) return null;
+    return (
+      [...this.cards.values()]
+        .sort((a, b) => b.note.layer - a.note.layer)
+        .find((c) => c.pinHitTest(point)) ?? null
+    );
+  }
+  setHoveredPin(card) {
+    if (this.hoveredPinCard === card) return;
+    if (this.hoveredPinCard) {
+      this.hoveredPinCard.setPinState({ hovered: false });
+    }
+    this.hoveredPinCard = card;
+    if (card) {
+      card.setPinState({ hovered: true });
+    }
+    this.callbacks.onPinHover?.(card ? card.note.id : null);
+  }
+  setLinkStart(id) {
+    const next = id || null;
+    if (this.linkStartId === next) return;
+    this.linkStartId = next;
+    for (const card of this.cards.values()) {
+      card.setPinState({ selected: Boolean(next && card.note.id === next) });
+    }
+    if (next) {
+      this.ctx.rope?.highlight(next);
+      this.ctx.rope?.beginPreview(next, this.lastPointerPoint);
+    } else {
+      this.ctx.rope?.clearPreview();
+      this.ctx.rope?.highlight(null);
+    }
+  }
   hover(card, point = null) {
     const hoverTarget = card
       ? null
@@ -315,8 +355,10 @@ export class NoteField {
     if (!this.enabled || e.button !== 0) return;
     const point = this.point(e);
     if (!point) return;
-    const card = this.at(point);
+    this.lastPointerPoint = point.clone();
     const canLink = this.callbacks.canLink?.() ?? true;
+    const pinCard = canLink ? this.pinAt(point) : null;
+    const card = pinCard ?? this.at(point);
     this.callbacks.onPointerDown?.();
     clearTimeout(this.hoverTimer);
     this.hovered?.setHover(false);
@@ -332,19 +374,15 @@ export class NoteField {
     this.ctx.dice?.tidyToCorner();
     this.downState = {
       card,
+      pinCard,
       x: e.clientX,
       y: e.clientY,
       time: performance.now(),
       offsetX: card ? card.object.position.x - point.x : 0,
       offsetZ: card ? card.object.position.z - point.z : 0,
-      linking: e.shiftKey && canLink,
       moved: false,
       wasDocked,
     };
-    if (card && e.shiftKey && canLink) {
-      this.callbacks.onLinkStart?.(card.note.id);
-      this.ctx.rope?.beginPreview(card.note.id);
-    }
     this.canvas.setPointerCapture(e.pointerId);
     this.pointerId = e.pointerId;
     this.magnet = createDropMagnet(point.x, point.z);
@@ -353,17 +391,55 @@ export class NoteField {
     if (!this.enabled) return;
     const point = this.point(e);
     if (!point) return;
+    this.lastPointerPoint = point.clone();
     const down = this.downState;
     if (!down) {
+      const canLink = this.callbacks.canLink?.() ?? true;
+      if (this.linkStartId && canLink) {
+        const pinCard = this.pinAt(point);
+        const card = this.at(point);
+        const target =
+          pinCard && pinCard.note.id !== this.linkStartId
+            ? pinCard
+            : card && card.note.id !== this.linkStartId
+              ? card
+              : null;
+        this.hovered?.setHover(false);
+        this.hovered = null;
+        this.callbacks.onHover?.(null);
+        this.setHoveredPin(target);
+        if (target) {
+          const snap = target.anchor();
+          this.ctx.rope?.movePreview({
+            x: snap.x,
+            y: snap.y,
+            z: snap.z,
+            snapped: true,
+          });
+          this.canvas.style.cursor = "pointer";
+        } else {
+          this.ctx.rope?.movePreview(point);
+          this.canvas.style.cursor = "crosshair";
+        }
+        return;
+      }
+      const pinCard = canLink ? this.pinAt(point) : null;
+      if (pinCard) {
+        clearTimeout(this.hoverTimer);
+        this.hovered?.setHover(false);
+        this.hovered = null;
+        this.callbacks.onHover?.(null);
+        this.setHoveredPin(pinCard);
+        this.ctx.rope?.highlight(pinCard.note.id);
+        this.canvas.style.cursor = "pointer";
+        return;
+      }
+      this.setHoveredPin(null);
       this.hover(this.at(point), point);
       return;
     }
     down.moved ||= Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 6;
     if (!down.card || !down.moved) return;
-    if (down.linking) {
-      this.ctx.rope?.movePreview(point);
-      return;
-    }
     if (!this.callbacks.canEdit?.(down.card.note)) return;
     const { layout, zone } = this.ctx.counter.get();
     const x = Math.max(
@@ -394,14 +470,8 @@ export class NoteField {
     this.downState = null;
     const point = this.point(e),
       card = down.card;
+    if (point) this.lastPointerPoint = point.clone();
     this.ctx.counterObject.well?.highlight(false);
-    this.ctx.rope?.clearPreview();
-    if (card && down.linking && down.moved) {
-      const target = this.at(point);
-      this.callbacks.onLinkEnd?.(target?.note.id ?? null);
-      this.releaseCapture();
-      return;
-    }
     if (card && down.moved && card.dragging) {
       const { layout, zone } = this.ctx.counter.get();
       if (this.magnet.latched) {
@@ -442,8 +512,18 @@ export class NoteField {
         playSound("polaroid.drop", { pan: panForClientX(e.clientX) });
       }
     } else if (!down.moved) {
-      if (card) this.callbacks.onSelect?.(card.note.id);
-      else if (point && this.ctx.counterObject.well?.contains(point))
+      if (this.linkStartId) {
+        const target = down.pinCard ?? card;
+        if (target && target.note.id !== this.linkStartId) {
+          this.callbacks.onPinClick?.(target.note.id);
+        } else {
+          this.callbacks.onLinkEnd?.(null);
+        }
+      } else if (down.pinCard) {
+        this.callbacks.onPinClick?.(down.pinCard.note.id);
+      } else if (card) {
+        this.callbacks.onSelect?.(card.note.id);
+      } else if (point && this.ctx.counterObject.well?.contains(point))
         this.callbacks.onOpenArchive?.();
       else if (point && this.ctx.clock.contains(point))
         this.callbacks.onClock?.();
@@ -483,8 +563,9 @@ export class NoteField {
     this.downState?.card?.release();
     this.downState?.card?.place();
     this.downState = null;
+    this.setHoveredPin(null);
+    this.setLinkStart(null);
     this.ctx.counterObject.well?.highlight(false);
-    this.ctx.rope?.clearPreview();
     this.callbacks.onLinkEnd?.(null);
   }
   dispose() {

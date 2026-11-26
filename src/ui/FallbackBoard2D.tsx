@@ -21,6 +21,8 @@ export interface BoardCallbacks {
   onBlank: () => void;
   onLinkStart: (id: string) => void;
   onLinkEnd: (id: string | null) => void;
+  onPinClick?: (id: string) => void;
+  onPinHover?: (id: string | null) => void;
   canEdit: (note: Note) => boolean;
   canLink?: () => boolean;
   canRoll?: () => boolean;
@@ -325,7 +327,20 @@ export function FallbackBoard2D({
                 }
               }}
             >
-              <i className={`physical-pin ${note.pinColor}`} />
+              <button
+                type="button"
+                className={`physical-pin ${note.pinColor}`}
+                aria-label={`点击图钉连线：${note.title}`}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!disabled && (callbacks.canLink?.() ?? true)) {
+                    callbacks.onPinClick?.(note.id);
+                  }
+                }}
+              />
               {note.cardStyle === "dossier" && (
                 <small className="dossier-stamp">
                   档案 / {note.id.slice(-6).toUpperCase()}

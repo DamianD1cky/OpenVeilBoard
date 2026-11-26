@@ -37,6 +37,11 @@ import {
 } from "../shared/navigation";
 import type { NoteEdge, SurfaceTheme } from "../domain/types";
 import type { DiceRoll } from "../features/dice/types";
+import {
+  RELATION_PRESETS,
+  formatEdgeLabel,
+  type EdgeDirection,
+} from "../domain/edgeRelations";
 
 const DICE_PRESETS = [
   "1d4",
@@ -106,8 +111,11 @@ export function Board({
   }, [scene, surfaceTheme]);
   const [indentRect, setIndentRect] = useState<IndentRect | null>(null);
   const [edge, setEdge] = useState<NoteEdge | null>(null),
+    [quickEdge, setQuickEdge] = useState<NoteEdge | null>(null),
+    [quickText, setQuickText] = useState(""),
+    [quickDir, setQuickDir] = useState<EdgeDirection>("none"),
     [hovered, setHovered] = useState<string | null>(null),
-    [linking, setLinking] = useState(false),
+    [pinHovered, setPinHovered] = useState<string | null>(null),
     [linkStart, setLinkStart] = useState<string | null>(null);
   const [error, setError] = useState(""),
     [formula, setFormula] = useState("1d20"),
@@ -259,9 +267,56 @@ export function Board({
     }
   }
   const connect = (id: string | null) => {
-    if (id && linkStart && id !== linkStart) safe(store.edge(linkStart, id));
+    const startId = linkStart;
     setLinkStart(null);
-    setLinking(false);
+    if (id && startId && id !== startId) {
+      playSound("polaroid.dock", { volume: 0.3, rate: 1.25 });
+      void store
+        .edge(startId, id)
+        .then((created) => {
+          if (created) {
+            setQuickEdge(created);
+            setQuickText("");
+            setQuickDir("none");
+          }
+        })
+        .catch((cause) => setError(errorText(cause)));
+    }
+  };
+  const applyQuickEdge = async (
+    label: string,
+    style: NoteEdge["style"],
+    color: string,
+    dir: EdgeDirection = quickDir,
+  ) => {
+    if (!quickEdge) return;
+    const target = quickEdge;
+    setQuickEdge(null);
+    setQuickText("");
+    playSound("polaroid.dock", { volume: 0.22, rate: 1.38 });
+    try {
+      await store.updateEdge({
+        ...target,
+        label: formatEdgeLabel(label, dir),
+        style,
+        color,
+      });
+    } catch (cause) {
+      setError(errorText(cause));
+    }
+  };
+  const handlePinClick = (id: string) => {
+    if (room.role === "observer") return;
+    if (!linkStart) {
+      playSound("polaroid.dock", { volume: 0.24, rate: 1.5 });
+      setLinkStart(id);
+      return;
+    }
+    if (linkStart === id) {
+      setLinkStart(null);
+      return;
+    }
+    connect(id);
   };
   const stepEventClock = (noteId: string, capId: string, delta: number) => {
     const note = state.notes.find((n) => n.id === noteId);
@@ -314,19 +369,26 @@ export function Board({
     canLink: () => room.role !== "observer",
     canRoll: () => room.role !== "observer",
     onSelect: (id) => {
-      if (linking) {
-        if (linkStart) connect(id);
-        else setLinkStart(id);
+      if (linkStart) {
+        if (linkStart === id) setLinkStart(null);
+        else connect(id);
       } else inspect(id);
     },
     onHover: (id) => {
       setHovered(id);
       if (id) setHoverBlocked(false);
     },
+    onPinHover: (id) => {
+      setPinHovered(id);
+    },
+    onPinClick: (id) => {
+      handlePinClick(id);
+    },
     onPointerDown: () => {
       setHoverBlocked(true);
       setHovered(null);
       setResult(null);
+      setQuickEdge(null);
     },
     onMove: (id, point) => safe(store.patch(id, point)),
     onArchive: (id) =>
@@ -352,14 +414,12 @@ export function Board({
       setEdge(nextEdge);
     },
     onBlank: () => {
-      setLinking(false);
       setLinkStart(null);
       setResult(null);
       scene?.dice.tidyToCorner();
     },
     onLinkStart: (id) => {
       if (room.role !== "observer") {
-        setLinking(true);
         setLinkStart(id);
       }
     },
@@ -427,8 +487,25 @@ export function Board({
     scene?.setAvoidanceZone?.(activeAvoidZone);
   }, [scene, activeAvoidZone]);
   useEffect(() => {
-    if (activeModal) setHoveredDice(null);
+    if (activeModal) {
+      setHoveredDice(null);
+      setPinHovered(null);
+      setLinkStart(null);
+      setQuickEdge(null);
+    }
   }, [activeModal]);
+  useEffect(() => {
+    if (!linkStart && !quickEdge) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setLinkStart(null);
+        setQuickEdge(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [linkStart, quickEdge]);
   useEffect(() => {
     if (!scene?.onIndentRect) {
       setIndentRect(null);
@@ -443,9 +520,13 @@ export function Board({
     scene?.setRouteView?.(route.kind !== "home");
   }, [scene, route.kind]);
   useEffect(() => {
-    if (linkStart) scene?.rope.highlight(linkStart);
-    else scene?.rope.highlight(null);
+    scene?.setLinkStart?.(linkStart);
+    if (!linkStart) scene?.rope?.highlight?.(null);
   }, [scene, linkStart]);
+  useEffect(() => {
+    if (quickEdge) scene?.rope?.highlightEdge?.(quickEdge.id);
+    else if (!linkStart) scene?.rope?.highlightEdge?.(null);
+  }, [scene, quickEdge, linkStart]);
   useEffect(() => {
     if (!state.roll?.result || state.roll.id === lastRoll.current) return;
     lastRoll.current = state.roll.id;
@@ -459,6 +540,19 @@ export function Board({
     else setResult(state.roll);
   }, [state.roll, scene, material]);
   const hoverNote = state.notes.find((n) => n.id === hovered) ?? null;
+  const linkStartNote = linkStart
+    ? (state.notes.find((n) => n.id === linkStart) ?? null)
+    : null;
+  const pinHoverNote = pinHovered
+    ? (state.notes.find((n) => n.id === pinHovered) ?? null)
+    : null;
+  const pinHint = linkStartNote
+    ? pinHoverNote && pinHoverNote.id !== linkStartNote.id
+      ? `点击系牢至「${pinHoverNote.title}」 · Esc 取消`
+      : `已系住「${linkStartNote.title}」图钉 · 点击另一枚图钉连线 · Esc 取消`
+    : pinHoverNote
+      ? `点击「${pinHoverNote.title}」图钉连线`
+      : null;
   const selectedId = route.kind === "note" ? route.noteId : null;
   const currentNote = selectedId
     ? (state.notes.find((n) => n.id === selectedId) ?? null)
@@ -534,17 +628,6 @@ export function Board({
                   ＋ 便签
                 </button>
                 <button
-                  aria-pressed={linking}
-                  onClick={() => {
-                    onCloseAccount?.();
-                    setRoomMenu(false);
-                    setLinking(!linking);
-                    setLinkStart(null);
-                  }}
-                >
-                  {linking ? "取消连线" : "连线"}
-                </button>
-                <button
                   aria-pressed={overlay === "dice"}
                   onClick={() => {
                     onCloseAccount?.();
@@ -594,6 +677,7 @@ export function Board({
             overlay === "clock" ||
               overlay === "surface" ||
               overlay === "dice" ||
+              edge ||
               accountOpen,
           )}
           onStepClock={stepEventClock}
@@ -667,10 +751,95 @@ export function Board({
         }
         userId={session.user.id}
         role={room.role}
-        hidden={activeModal || hoverBlocked}
+        hidden={activeModal || Boolean(quickEdge) || (hoverBlocked && !pinHint)}
+        pinHint={pinHint}
         raised={diceDocked}
         indentRect={indentRect}
       />
+      {quickEdge && !activeModal && room.role !== "observer" && (
+        <div
+          className="edge-quick-bar"
+          role="region"
+          aria-label="挂上关系纸签"
+          style={
+            indentRect
+              ? {
+                  left: `${indentRect.left + Math.round(indentRect.width * 0.14)}px`,
+                  width: `${Math.max(260, Math.round(indentRect.width * 0.72))}px`,
+                  bottom: `${Math.max(18, window.innerHeight - (indentRect.top + indentRect.height) + 18)}px`,
+                }
+              : undefined
+          }
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="edge-quick-presets">
+            {RELATION_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={`edge-quick-chip edge-preset-${preset.category}`}
+                onClick={() =>
+                  void applyQuickEdge(
+                    preset.label,
+                    preset.style,
+                    preset.color,
+                    preset.defaultDirection ?? "none",
+                  )
+                }
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <form
+            className="edge-quick-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!quickText.trim()) {
+                setQuickEdge(null);
+                return;
+              }
+              void applyQuickEdge(
+                quickText.trim(),
+                quickEdge.style,
+                quickEdge.color,
+                quickDir,
+              );
+            }}
+          >
+            <input
+              value={quickText}
+              onChange={(e) => setQuickText(e.target.value)}
+              placeholder="自定义关系，回车挂签…"
+              maxLength={40}
+            />
+            <button
+              type="button"
+              className="edge-quick-dir"
+              title="切换关系指向"
+              onClick={() =>
+                setQuickDir((prev) =>
+                  prev === "none"
+                    ? "forward"
+                    : prev === "forward"
+                      ? "both"
+                      : "none",
+                )
+              }
+            >
+              {quickDir === "forward" ? "→" : quickDir === "both" ? "↔" : "—"}
+            </button>
+            <button
+              type="button"
+              className="edge-quick-close"
+              aria-label="仅保留纯连线"
+              onClick={() => setQuickEdge(null)}
+            >
+              ×
+            </button>
+          </form>
+        </div>
+      )}
       {hoveredDice && !activeModal && diceDocked && (
         <div className="dice-dock-hint" style={dockHintStyle} role="status">
           <strong>

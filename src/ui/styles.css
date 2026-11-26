@@ -585,6 +585,7 @@ h3 {
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 105;
   pointer-events: none;
   overflow: visible;
 }
@@ -690,6 +691,14 @@ h3 {
   content: "·";
   margin-right: 8px;
   opacity: 0.6;
+}
+.paper-dot.pin-hint-dot {
+  background: var(--pin);
+}
+.physical-pin {
+  padding: 0;
+  border: none;
+  cursor: pointer;
 }
 .hover-caption-author {
   opacity: 0.8;
@@ -1972,7 +1981,8 @@ h3 {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  min-height: 220px;
+  min-height: 0;
+  overflow: hidden;
   border-radius: 6px;
   transition: outline-color 0.2s ease;
 }
@@ -1984,7 +1994,8 @@ h3 {
 .note-projection-hit {
   flex: 1;
   width: 100%;
-  min-height: 160px;
+  min-height: 0;
+  overflow: hidden;
   background: transparent;
   border: none;
   padding: 0;
@@ -3481,6 +3492,101 @@ body:has(.note-lightbox-overlay) .corner-bar,
   color: var(--tray-ink-strong);
   border-bottom-color: var(--tray-line-strong);
   background: transparent;
+}
+
+/* ---------- Relationship Paper-Slip Quick Bar & Dialog Presets ---------- */
+.edge-preset-chips,
+.edge-dir-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.edge-quick-bar {
+  position: fixed;
+  left: 16%;
+  width: 68%;
+  bottom: 24px;
+  z-index: 130;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--tray-line);
+  background: transparent;
+  color: var(--tray-ink);
+  text-shadow: var(--tray-halo);
+  animation: in-frame-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.edge-quick-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.edge-quick-chip {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--tray-ink);
+  background: transparent;
+  border: 1px solid var(--tray-line);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, color 0.16s, transform 0.14s;
+}
+.edge-quick-chip:hover {
+  color: var(--tray-ink-strong);
+  border-color: var(--tray-line-strong);
+  background: var(--tray-wash);
+  transform: translateY(-1px);
+}
+.edge-quick-chip.edge-preset-hostile:hover,
+.tray-chip.edge-preset-hostile[aria-pressed="true"] {
+  border-color: var(--tray-danger);
+  color: var(--tray-danger);
+}
+.edge-quick-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.edge-quick-form input {
+  width: 148px;
+  padding: 3px 4px;
+  font-size: 12px;
+  color: var(--tray-ink-strong);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--tray-line);
+  border-radius: 0;
+}
+.edge-quick-form input::placeholder {
+  color: var(--tray-ink-subtle);
+  opacity: 1;
+}
+.edge-quick-form input:focus {
+  outline: none;
+  border-bottom-color: var(--tray-line-strong);
+}
+.edge-quick-dir,
+.edge-quick-close {
+  padding: 2px 7px;
+  font-size: 12px;
+  color: var(--tray-ink-muted);
+  background: transparent;
+  border: 1px solid var(--tray-line);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.edge-quick-dir:hover,
+.edge-quick-close:hover {
+  color: var(--tray-ink-strong);
+  border-color: var(--tray-line-strong);
+  background: var(--tray-wash);
 }
 
 @media (max-width: 760px) {

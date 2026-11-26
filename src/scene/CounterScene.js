@@ -300,6 +300,9 @@ export class CounterScene {
   setNoteProjection(state) {
     this.projection?.setState(state);
   }
+  setNoteProjectionBounds(bounds) {
+    this.projection?.setBounds(bounds);
+  }
   selectProjectionIndex(index) {
     this.projection?.selectIndex(index);
   }
@@ -314,6 +317,9 @@ export class CounterScene {
   }
   setAvoidanceZone(zone) {
     this.field?.setAvoidanceZone(zone);
+  }
+  setLinkStart(id) {
+    this.field?.setLinkStart(id);
   }
   captureDiceSnapshot() {
     if (this.disposed || !this.app?.canvas) return Promise.resolve(null);
