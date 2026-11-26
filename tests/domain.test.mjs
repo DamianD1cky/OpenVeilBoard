@@ -72,15 +72,80 @@ test("旧像素坐标往返不会改变，超界数据有界", () => {
   }
   assert.deepEqual(legacyToNormalized(-1000, 9999), { x: -0.5, y: 0.5 });
 });
-test("归档仅隐藏连线，取回恢复同一条连线", () => {
-  const notes = [
-      { id: "a", archivedAt: null },
-      { id: "b", archivedAt: "now" },
-    ],
-    edges = [{ id: "e", fromNoteId: "a", toNoteId: "b" }];
-  assert.equal(visibleEdges(notes, edges).length, 0);
-  notes[1].archivedAt = null;
-  assert.equal(visibleEdges(notes, edges)[0].id, "e");
+test("归档便签会清除关联连线，取回台面不再带回旧关系", async () => {
+  const removedEdges = [];
+  const serverNotes = [
+    { ...note, id: "a", title: "甲", archivedAt: null },
+    { ...note, id: "b", title: "乙", archivedAt: null },
+    { ...note, id: "c", title: "丙", archivedAt: null },
+  ];
+  let serverEdges = [
+    { id: "e1", fromNoteId: "a", toNoteId: "b", label: "仇人", color: "#b83227", style: "rope" },
+    { id: "e2", fromNoteId: "b", toNoteId: "c", label: "情人", color: "#bc984d", style: "gold" },
+  ];
+  const store = createBoardStore(
+    {
+      async load() {
+        return {
+          notes: serverNotes.map((n) => ({ ...n })),
+          edges: serverEdges.map((e) => ({ ...e })),
+          clock: { mode: "paused", baseIso: "", anchorIso: "", speed: 1, running: false },
+          members: [],
+        };
+      },
+      async save(n, patch) {
+        const idx = serverNotes.findIndex((item) => item.id === n.id);
+        serverNotes[idx] = { ...serverNotes[idx], ...patch, version: serverNotes[idx].version + 1 };
+        return { ...serverNotes[idx] };
+      },
+      async create(n) {
+        return n;
+      },
+      async remove() {},
+      async saveEdge(e) {
+        return e;
+      },
+      async removeEdge(id) {
+        removedEdges.push(id);
+        serverEdges = serverEdges.filter((e) => e.id !== id);
+      },
+      async saveClock(c) {
+        return c;
+      },
+      async roll() {
+        throw new Error("unused");
+      },
+      subscribe() {
+        return () => {};
+      },
+      async imageUrl(p) {
+        return p;
+      },
+      async upload() {
+        return "";
+      },
+      async comment() {
+        throw new Error("unused");
+      },
+    },
+    "c",
+    { id: "u", name: "测试" },
+  );
+  await store.refresh();
+  assert.equal(store.getSnapshot().edges.length, 2);
+  // Archiving note "a" removes edge e1, keeps unrelated edge e2
+  await store.patch("a", { archivedAt: "2026-11-26T17:00:00Z" });
+  assert.deepEqual(removedEdges, ["e1"]);
+  assert.deepEqual(
+    store.getSnapshot().edges.map((e) => e.id),
+    ["e2"],
+  );
+  // Restoring note "a" back to tabletop does NOT bring back e1
+  await store.patch("a", { archivedAt: null });
+  assert.deepEqual(
+    store.getSnapshot().edges.map((e) => e.id),
+    ["e2"],
+  );
 });
 test("SAT 避让旋转纸卡", () => {
   const a = { id: "a", x: 0, y: 0, width: 0.12, height: 0.15, rotation: 30 },

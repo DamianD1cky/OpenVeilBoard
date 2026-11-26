@@ -658,6 +658,7 @@ export class NoteField {
       }
       const { layout, zone } = this.ctx.counter.get();
       if (this.magnet.latched) {
+        this.ctx.rope?.snapNote?.(card.note.id, { ember: false });
         card.release();
         card.archive(zone, () => {
           this.callbacks.onArchive?.(card.note.id);

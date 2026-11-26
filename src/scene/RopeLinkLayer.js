@@ -434,10 +434,12 @@ export class RopeLinkLayer {
    * Detached strings spark at the burned tip, whip & retract smoothly toward the surviving
    * pin while fading out, and any attached relationship paper slip gently drops & fades.
    */
-  snapNote(noteId) {
+  snapNote(noteId, { ember: showEmber = true } = {}) {
     const connected = [...(this.byNote.get(noteId) ?? [])];
     if (!connected.length) return;
-    playSound("polaroid.dock", { volume: 0.24, rate: 1.85 });
+    if (showEmber) {
+      playSound("polaroid.dock", { volume: 0.24, rate: 1.85 });
+    }
     for (const link of connected) {
       this.links.delete(link.edge.id);
       this.active.delete(link);
@@ -459,31 +461,35 @@ export class RopeLinkLayer {
       const burnTipStart = (burnedIsFrom ? a : b).clone();
       const surviveEnd = (burnedIsFrom ? b : a).clone();
 
-      // Hide collar at the severed burning pin immediately
+      // Hide collar at the detached pin immediately
       if (burnedIsFrom && link.collarA) link.collarA.visible = false;
       if (!burnedIsFrom && link.collarB) link.collarB.visible = false;
 
-      // Glowing ember bead riding the severed burning tip
-      const emberMat = new MeshStandardMaterial({
-        color: "#ff9b3d",
-        emissive: "#ff4d1a",
-        emissiveIntensity: 3.4,
-        roughness: 0.3,
-        metalness: 0,
-        transparent: true,
-        opacity: 1,
-      });
-      const ember = new Mesh(new SphereGeometry(0.0075, 8, 6), emberMat);
-      ember.position.copy(burnTipStart);
-      ember.renderOrder = 8;
-      this.object.add(ember);
+      let ember = null;
+      let emberMat = null;
+      if (showEmber) {
+        // Glowing ember bead riding the severed burning tip
+        emberMat = new MeshStandardMaterial({
+          color: "#ff9b3d",
+          emissive: "#ff4d1a",
+          emissiveIntensity: 3.4,
+          roughness: 0.3,
+          metalness: 0,
+          transparent: true,
+          opacity: 1,
+        });
+        ember = new Mesh(new SphereGeometry(0.0075, 8, 6), emberMat);
+        ember.position.copy(burnTipStart);
+        ember.renderOrder = 8;
+        this.object.add(ember);
+      }
 
       const labelStartPos = link.label
         ? link.label.object.position.clone()
         : null;
       const labelStartRotZ = link.label ? link.label.object.rotation.z : 0;
 
-      link.pluckAmp = 0.015;
+      link.pluckAmp = showEmber ? 0.015 : 0.009;
       link.pluckPhase = 0;
       link.snap = {
         burnedIsFrom,
@@ -498,7 +504,7 @@ export class RopeLinkLayer {
         labelDriftX: (Math.random() - 0.5) * 0.05,
         labelDriftZ: 0.02 + Math.random() * 0.03,
         t: 0,
-        duration: 0.72,
+        duration: showEmber ? 0.72 : 0.48,
       };
       this.snapping.add(link);
     }
@@ -630,12 +636,17 @@ export class RopeLinkLayer {
           Math.sin(recoil * Math.PI) * 0.014;
         this._tmpA.set(tipX, tipY, tipZ);
 
-        // Ember spark rides the severed burning tip
-        s.ember.position.copy(this._tmpA);
-        s.ember.scale.setScalar(emberScale);
-        s.emberMat.emissiveIntensity = emberGlow;
-        s.emberMat.opacity = Math.max(0, 1 - Math.max(0, (s.t - 0.65) / 0.25));
-        s.ember.visible = s.emberMat.opacity > 0.02;
+        // Ember spark rides the severed burning tip (only for burn mode)
+        if (s.ember && s.emberMat) {
+          s.ember.position.copy(this._tmpA);
+          s.ember.scale.setScalar(emberScale);
+          s.emberMat.emissiveIntensity = emberGlow;
+          s.emberMat.opacity = Math.max(
+            0,
+            1 - Math.max(0, (s.t - 0.65) / 0.25),
+          );
+          s.ember.visible = s.emberMat.opacity > 0.02;
+        }
 
         // Strong recoil string vibration + smooth opacity fade in final 45%
         link.pluckPhase += stepDt * 26 * Math.PI * 2;

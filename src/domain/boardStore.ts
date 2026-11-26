@@ -84,9 +84,22 @@ export function createBoardStore(
       };
     }
     if (!Object.keys(changes).length) return Promise.resolve();
+    const isArchiving = Boolean(changes.archivedAt) && !before.archivedAt;
+    const edgesToClear = isArchiving
+      ? state.edges.filter((e) => e.fromNoteId === id || e.toNoteId === id)
+      : [];
     const optimistic = { ...before, ...changes };
     pending.set(id, { ...pending.get(id), ...changes });
-    replaceNote(optimistic);
+    if (edgesToClear.length) {
+      for (const edgeItem of edgesToClear) pendingEdges.set(edgeItem.id, null);
+      const clearIds = new Set(edgesToClear.map((e) => e.id));
+      emit({
+        notes: state.notes.map((item) => (item.id === id ? optimistic : item)),
+        edges: state.edges.filter((e) => !clearIds.has(e.id)),
+      });
+    } else {
+      replaceNote(optimistic);
+    }
     const predecessor = chains.get(id) ?? Promise.resolve();
     const write = predecessor
       .catch(() => {})
@@ -102,6 +115,15 @@ export function createBoardStore(
         );
         try {
           const saved = await repository.save(optimistic, changes, expected);
+          if (edgesToClear.length) {
+            await Promise.all(
+              edgesToClear.map((edgeItem) =>
+                repository.removeEdge(edgeItem.id).catch(() => {}),
+              ),
+            );
+            for (const edgeItem of edgesToClear)
+              pendingEdges.delete(edgeItem.id);
+          }
           savedVersion++;
           const outstanding = { ...pending.get(id) };
           for (const key of Object.keys(changes) as (keyof NotePatch)[]) {
@@ -113,6 +135,7 @@ export function createBoardStore(
           replaceNote({ ...saved, ...outstanding });
         } catch (cause) {
           pending.delete(id);
+          for (const edgeItem of edgesToClear) pendingEdges.delete(edgeItem.id);
           emit({ error: errorText(cause) });
           await refresh();
           throw cause;
