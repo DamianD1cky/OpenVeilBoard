@@ -139,8 +139,12 @@ export function Board({
     [diceBtnHovered, setDiceBtnHovered] = useState<string | null>(null),
     [clockBtnHovered, setClockBtnHovered] = useState<{
       noteId: string;
+      action: "plus" | "minus" | "toggle";
       delta: number;
     } | null>(null),
+    [floorClockOverride, setFloorClockOverride] = useState<
+      { mode: "hidden" } | { mode: "pin"; key: string } | null
+    >(null),
     [archivePullId, setArchivePullId] = useState<string | null>(null),
     [linkStart, setLinkStart] = useState<string | null>(null);
   const [error, setError] = useState(""),
@@ -369,6 +373,102 @@ export function Board({
     });
     safe(store.patch(noteId, { capabilities: nextCaps }));
   };
+  const floorClockItems = useMemo(() => {
+    const items: Array<{
+      key: string;
+      noteId: string;
+      capId: string;
+      noteTitle: string;
+      name: string;
+      segments: number;
+      value: number;
+      consequence: string;
+      primary: boolean;
+    }> = [];
+    for (const note of state.notes) {
+      if (note.archivedAt) continue;
+      if (!canReadNote(note, session.user.id, room.role)) continue;
+      for (const cap of note.capabilities) {
+        if (!cap.enabled || cap.type !== "event_clock") continue;
+        if (cap.data?.pinned === false) continue;
+        const segments = Math.max(2, Math.min(24, Number(cap.data?.segments) || 6));
+        const value = Math.max(0, Math.min(segments, Number(cap.data?.value) || 0));
+        items.push({
+          key: `${note.id}:${cap.id}`,
+          noteId: note.id,
+          capId: cap.id,
+          noteTitle: note.title,
+          name: String(cap.data?.name || note.title || "事件钟").trim(),
+          segments,
+          value,
+          consequence: String(cap.data?.consequence || "").trim(),
+          primary: Boolean(cap.data?.primary),
+        });
+      }
+    }
+    return items;
+  }, [state.notes, session.user.id, room.role]);
+  const syncedPrimaryClock = useMemo(() => {
+    if (!floorClockItems.length) return null;
+    return (
+      floorClockItems.find((c) => c.primary) ??
+      [...floorClockItems].sort((a, b) => b.value / b.segments - a.value / a.segments)[0]
+    );
+  }, [floorClockItems]);
+  const activeFloorClock = useMemo(() => {
+    if (floorClockOverride?.mode === "hidden") return null;
+    if (floorClockOverride?.mode === "pin") {
+      return (
+        floorClockItems.find((c) => c.key === floorClockOverride.key) ??
+        syncedPrimaryClock
+      );
+    }
+    return syncedPrimaryClock;
+  }, [floorClockOverride, floorClockItems, syncedPrimaryClock]);
+  const toggleCardClockBackdrop = (noteId: string) => {
+    const notes = store.getSnapshot().notes;
+    const target = notes.find((n) => n.id === noteId && !n.archivedAt);
+    const clockCap = target?.capabilities.find(
+      (c) => c.enabled && c.type === "event_clock",
+    );
+    if (!target || !clockCap) return;
+    const key = `${target.id}:${clockCap.id}`;
+    playSound("polaroid.dock", { volume: 0.2, rate: 1.24 });
+    if (activeFloorClock?.key === key) {
+      setFloorClockOverride({ mode: "hidden" });
+      return;
+    }
+    if (room.role === "gm") {
+      setFloorClockOverride(null);
+      for (const note of notes) {
+        if (note.archivedAt) continue;
+        let dirty = false;
+        const nextCaps = note.capabilities.map((c) => {
+          if (c.type !== "event_clock") return c;
+          const shouldBePrimary = note.id === target.id && c.id === clockCap.id;
+          const nextPinned = shouldBePrimary ? true : c.data?.pinned;
+          if (
+            Boolean(c.data?.primary) !== shouldBePrimary ||
+            c.data?.pinned !== nextPinned
+          ) {
+            dirty = true;
+            return {
+              ...c,
+              data: {
+                ...c.data,
+                pinned: nextPinned,
+                primary: shouldBePrimary,
+              },
+            };
+          }
+          return c;
+        });
+        if (dirty) safe(store.patch(note.id, { capabilities: nextCaps }));
+      }
+    } else {
+      setFloorClockOverride({ mode: "pin", key });
+    }
+  };
   bridge.current = {
     canEdit: (note) =>
       room.role !== "observer" &&
@@ -405,6 +505,9 @@ export function Board({
       );
       if (!clockCap) return;
       stepEventClock(target.id, clockCap.id, delta);
+    },
+    onCardToggleClockBackdrop: (id) => {
+      toggleCardClockBackdrop(id);
     },
     onCardRoll: (id) => {
       if (room.role === "observer" || rolling) return;
@@ -617,6 +720,12 @@ export function Board({
     const segs = Math.max(2, Math.min(24, Number(clockBtnCap.data?.segments) || 6));
     const cur = Math.max(0, Math.min(segs, Number(clockBtnCap.data?.value) || 0));
     const name = String(clockBtnCap.data?.name || clockBtnNote.title || "事件钟");
+    if (clockBtnHovered.action === "toggle") {
+      const key = `${clockBtnNote.id}:${clockBtnCap.id}`;
+      return activeFloorClock?.key === key
+        ? `点击隐藏「${name}」台面底纹`
+        : `点击将「${name}」投射为台面底纹`;
+    }
     const next = Math.max(0, Math.min(segs, cur + clockBtnHovered.delta));
     if (next === cur) {
       return `${name} 已达${clockBtnHovered.delta > 0 ? "满格" : "起点"} · ${cur}/${segs}`;
@@ -648,45 +757,6 @@ export function Board({
       (lighting.brightness < 0.94 && lighting.contrast > 1.25),
   );
   const showCornerBar = route.kind === "home";
-  const primaryFloorClock = useMemo(() => {
-    const items: Array<{
-      key: string;
-      noteId: string;
-      capId: string;
-      noteTitle: string;
-      name: string;
-      segments: number;
-      value: number;
-      consequence: string;
-      primary: boolean;
-    }> = [];
-    for (const note of state.notes) {
-      if (note.archivedAt) continue;
-      if (!canReadNote(note, session.user.id, room.role)) continue;
-      for (const cap of note.capabilities) {
-        if (!cap.enabled || cap.type !== "event_clock") continue;
-        if (cap.data?.pinned === false) continue;
-        const segments = Math.max(2, Math.min(24, Number(cap.data?.segments) || 6));
-        const value = Math.max(0, Math.min(segments, Number(cap.data?.value) || 0));
-        items.push({
-          key: `${note.id}:${cap.id}`,
-          noteId: note.id,
-          capId: cap.id,
-          noteTitle: note.title,
-          name: String(cap.data?.name || note.title || "事件钟").trim(),
-          segments,
-          value,
-          consequence: String(cap.data?.consequence || "").trim(),
-          primary: Boolean(cap.data?.primary),
-        });
-      }
-    }
-    if (!items.length) return null;
-    return (
-      items.find((c) => c.primary) ??
-      [...items].sort((a, b) => b.value / b.segments - a.value / a.segments)[0]
-    );
-  }, [state.notes, session.user.id, room.role]);
   const floorClockHidden =
     !showCornerBar ||
     Boolean(
@@ -697,8 +767,8 @@ export function Board({
         accountOpen,
     );
   useEffect(() => {
-    scene?.setEventClock?.(floorClockHidden ? null : primaryFloorClock);
-  }, [scene, floorClockHidden, primaryFloorClock]);
+    scene?.setEventClock?.(floorClockHidden ? null : activeFloorClock);
+  }, [scene, floorClockHidden, activeFloorClock]);
   const cornerBarStyle = indentRect
     ? {
         left: `${indentRect.left + 28}px`,

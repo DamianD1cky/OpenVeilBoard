@@ -26,6 +26,7 @@ export class NoteField {
     this.lastPointerPoint = null;
     this.archiveMode = false;
     this.archiveCards = new Map();
+    this.exitingArchiveCards = new Set();
     this.archiveVisibleIds = null;
     this.canvas = ctx.app.canvas;
     this.handlers = {
@@ -50,7 +51,12 @@ export class NoteField {
       for (const card of this.cards.values())
         card.update(card.note, this.cardWidthFor(card.note));
       if (this.avoidZone) this.applyAvoidance(false);
-      if (this.archiveMode) this.syncArchiveCards(false);
+      if (this.activeFloorClockNoteId) {
+      for (const [id, card] of this.cards) {
+        card.setClockProjected(id === this.activeFloorClockNoteId);
+      }
+    }
+    if (this.archiveMode) this.syncArchiveCards(false);
     });
   }
   cardWidth() {
@@ -156,6 +162,11 @@ export class NoteField {
         });
       }
     }
+    if (this.activeFloorClockNoteId) {
+      for (const [id, card] of this.cards) {
+        card.setClockProjected(id === this.activeFloorClockNoteId);
+      }
+    }
     if (this.archiveMode) this.syncArchiveCards(false);
   }
   setArchiveView(active, visibleIds = null) {
@@ -171,9 +182,33 @@ export class NoteField {
         this.callbacks.onHover?.(null);
       }
       this.callbacks.onArchivePull?.(null);
-      for (const card of this.archiveCards.values()) card.dispose();
+      const closing = [...this.archiveCards.values()];
       this.archiveCards.clear();
+      if (closing.length) {
+        const { layout, zone } = this.ctx.counter.get();
+        const wellX = zone?.x ?? (layout ? layout.indentWidth * 0.36 : 1.1);
+        const wellZ = zone?.z ?? (layout ? layout.indentHeight * 0.36 : 0.7);
+        // Tuck farthest cards back into the well first for a clean cascade
+        closing.sort(
+          (a, b) =>
+            Math.hypot(b.object.position.x - wellX, b.object.position.z - wellZ) -
+            Math.hypot(a.object.position.x - wellX, a.object.position.z - wellZ),
+        );
+        playSound("polaroid.shuffle", { volume: 0.22, pan: 0.25 });
+        closing.forEach((card, i) => {
+          this.exitingArchiveCards.add(card);
+          card.exitToWell(wellX, wellZ, Math.min(i, 7) * 0.03, () => {
+            this.exitingArchiveCards.delete(card);
+            card.dispose();
+          });
+        });
+      }
       return;
+    }
+    // Cancel any leftover exiting archive cards before opening a fresh grid
+    if (this.exitingArchiveCards.size) {
+      for (const card of this.exitingArchiveCards) card.dispose();
+      this.exitingArchiveCards.clear();
     }
     this.setHoveredPin(null);
     this.setLinkStart(null);
@@ -385,8 +420,9 @@ export class NoteField {
         card.sweepOut(exitX, card.aim.z + jitter, 0.32 + i * 0.06, i * 0.045);
       });
     } else {
+      const baseDelay = this.exitingArchiveCards.size > 0 ? 0.08 : 0;
       cards.forEach((card, i) => {
-        card.sweepIn(i * 0.045);
+        card.sweepIn(baseDelay + i * 0.045);
       });
     }
   }
@@ -439,27 +475,38 @@ export class NoteField {
     this.hoveredDiceBtnCard = card;
     this.callbacks.onDiceButtonHover?.(card ? card.note.id : null);
   }
+  setActiveFloorClock(clock) {
+    const activeNoteId = clock?.noteId ?? null;
+    this.activeFloorClockNoteId = activeNoteId;
+    for (const [id, card] of this.cards) {
+      card.setClockProjected(id === activeNoteId);
+    }
+  }
   clockAt(point) {
     if (!point || this.archiveMode) return null;
     for (const card of [...this.cards.values()].sort(
       (a, b) => b.note.layer - a.note.layer,
     )) {
-      const delta = card.clockHitTest(point);
-      if (delta !== 0) {
-        if (this.callbacks.canEdit && !this.callbacks.canEdit(card.note)) {
-          return null;
-        }
-        return { card, delta };
+      const action = card.clockHitTest(point);
+      if (!action) continue;
+      if (action === "toggle") {
+        return { card, action: "toggle", delta: 0 };
       }
+      if (this.callbacks.canEdit && !this.callbacks.canEdit(card.note)) {
+        return null;
+      }
+      return { card, action, delta: action === "plus" ? 1 : -1 };
     }
     return null;
   }
   setHoveredClockBtn(hit) {
     const prev = this.hoveredClockBtnHit;
-    if (prev?.card === hit?.card && prev?.delta === hit?.delta) return;
+    if (prev?.card === hit?.card && prev?.action === hit?.action) return;
     this.hoveredClockBtnHit = hit ?? null;
     this.callbacks.onClockButtonHover?.(
-      hit ? { noteId: hit.card.note.id, delta: hit.delta } : null,
+      hit
+        ? { noteId: hit.card.note.id, action: hit.action, delta: hit.delta }
+        : null,
     );
   }
   setHoveredPin(card) {
@@ -766,10 +813,14 @@ export class NoteField {
         this.callbacks.onPinClick?.(down.pinCard.note.id);
       } else if (down.clockHit) {
         down.clockHit.card.pulse();
-        this.callbacks.onCardStepClock?.(
-          down.clockHit.card.note.id,
-          down.clockHit.delta,
-        );
+        if (down.clockHit.action === "toggle") {
+          this.callbacks.onCardToggleClockBackdrop?.(down.clockHit.card.note.id);
+        } else {
+          this.callbacks.onCardStepClock?.(
+            down.clockHit.card.note.id,
+            down.clockHit.delta,
+          );
+        }
       } else if (down.diceCard) {
         down.diceCard.pulse();
         this.callbacks.onCardRoll?.(down.diceCard.note.id);
@@ -838,6 +889,8 @@ export class NoteField {
     this.cards.forEach((c) => c.dispose());
     this.archiveCards.forEach((c) => c.dispose());
     this.archiveCards.clear();
+    this.exitingArchiveCards.forEach((c) => c.dispose());
+    this.exitingArchiveCards.clear();
     this.object.removeFromParent();
   }
 }

@@ -155,6 +155,7 @@ export function SurfaceThemeDrawer({
   onChangeLighting,
   onClose,
   indentRect = null,
+  exiting = false,
 }: {
   theme: SurfaceTheme;
   lighting: LightingState;
@@ -164,6 +165,7 @@ export function SurfaceThemeDrawer({
   onChangeLighting: (next: LightingState, immediate?: boolean) => void;
   onClose: () => void;
   indentRect?: IndentRect | null;
+  exiting?: boolean;
 }) {
   const [tab, setTab] = useState<SurfaceDrawerTab>(initialTab);
   useEffect(() => {

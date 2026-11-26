@@ -2677,6 +2677,16 @@ h3 {
   align-items: center;
   gap: 5px;
 }
+.card-clock-label {
+  padding: 1px 2px;
+  border: none;
+  border-bottom: 1px dashed currentColor;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .card-clock-step {
   display: inline-flex;
   align-items: center;

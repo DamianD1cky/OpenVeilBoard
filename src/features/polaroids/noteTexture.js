@@ -476,6 +476,16 @@ export function getClockStepUvRects(note) {
       v0: btnY / height,
       v1: (btnY + btnSize) / height,
     },
+    gauge: {
+      x: barX,
+      y: btnY,
+      w: barW,
+      h: btnSize,
+      u0: barX / width,
+      u1: (barX + barW) / width,
+      v0: btnY / height,
+      v1: (btnY + btnSize) / height,
+    },
     plus: {
       x: plusX,
       y: btnY,
@@ -500,7 +510,7 @@ function drawRoundedRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawNoteToCanvas(canvas, note, image = null) {
+function drawNoteToCanvas(canvas, note, image = null, options = {}) {
   const width = canvas.width;
   const height = canvas.height;
   const ctx = canvas.getContext("2d", { colorSpace: "srgb" });
@@ -670,15 +680,21 @@ function drawNoteToCanvas(canvas, note, image = null) {
     const sw = (clockLayout.barW - segGap * (segs - 1)) / segs;
 
     ctx.save();
-    // Compact clock name + fraction right above the segmented bar
+    // Compact clock name + active floor-projection indicator + fraction right above the segmented bar
+    const clockProjected = Boolean(options?.clockProjected);
     const clockLabel = String(cap.data?.name || "事件钟").trim();
     ctx.font = '700 20px "PingFang SC", "Noto Sans CJK SC", sans-serif';
-    ctx.fillStyle = dark ? "rgba(243, 232, 208, 0.82)" : "rgba(62, 50, 36, 0.78)";
+    ctx.fillStyle = clockProjected
+      ? accentFill
+      : dark
+        ? "rgba(243, 232, 208, 0.82)"
+        : "rgba(62, 50, 36, 0.78)";
     ctx.textBaseline = "bottom";
     ctx.textAlign = "left";
+    const prefix = clockProjected ? "● " : "";
     const maxNameW = clockLayout.barW - 52;
-    let shownName = clockLabel;
-    while (shownName.length > 2 && ctx.measureText(shownName).width > maxNameW) {
+    let shownName = `${prefix}${clockLabel}`;
+    while (shownName.length > 3 && ctx.measureText(shownName).width > maxNameW) {
       shownName = `${shownName.slice(0, -2)}…`;
     }
     ctx.fillText(shownName, clockLayout.barX, by - 6);
@@ -815,13 +831,13 @@ function drawNoteToCanvas(canvas, note, image = null) {
   }
 }
 
-export function createNoteTexture(note, image = null) {
+export function createNoteTexture(note, image = null, options = {}) {
   const width = 768,
     height = Math.round(width / cardAspect(note));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  drawNoteToCanvas(canvas, note, image);
+  drawNoteToCanvas(canvas, note, image, options);
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 8;

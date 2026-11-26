@@ -62,6 +62,14 @@ export class Counter {
     };
   }
 
+  preloadSurfaceTheme(resolved) {
+    const aniso = this.ctx.controls.material.anisotropy;
+    return Promise.all([
+      loadSurfaceTextureSet(resolved.frame, aniso),
+      loadSurfaceTextureSet(resolved.tray, aniso),
+    ]);
+  }
+
   async loadThemeTextures(resolved, token) {
     const aniso = this.ctx.controls.material.anisotropy;
     const [frameTex, trayTex] = await Promise.all([

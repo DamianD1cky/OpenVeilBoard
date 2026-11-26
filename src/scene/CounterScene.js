@@ -16,6 +16,7 @@ import {
   loadLastLighting,
   resolveLightingState,
 } from "./lightingPresets.js";
+import { resolveSurfaceTheme } from "./surfacePresets.js";
 import { Gobo } from "./gobo.js";
 import { ScenePost, objectData } from "./post.js";
 import { createPMREM, loadGainMap } from "../engine/pmrem.js";
@@ -56,6 +57,9 @@ export class CounterScene {
     this.layoutCam = new PerspectiveCamera(32, 1, 0.1, 80);
     this.routeActive = false;
     this.pendingSnapshot = null;
+    this.baseExposure = app.renderer.exposure ?? 1;
+    this.surfaceExposure = { scale: 1 };
+    this.surfaceSwitchToken = 0;
     this.ctx = {
       app,
       controls: structuredClone(FACTORY_DEFAULTS),
@@ -326,8 +330,44 @@ export class CounterScene {
   closeProjectionLightbox(immediate = false) {
     this.projection?.closeLightbox(immediate);
   }
-  setSurfaceTheme(theme) {
-    return this.counter?.setSurfaceTheme(theme);
+  async setSurfaceTheme(theme, { animate = true } = {}) {
+    if (!this.counter) return;
+    const resolved = resolveSurfaceTheme(theme);
+    const nextKey = `${resolved.frameId}|${resolved.trayId}`;
+    const prevKey = this.counter.appliedThemeKey;
+    const dipDur = whenMotion(0.12);
+    if (!animate || !prevKey || prevKey === nextKey || dipDur <= 0) {
+      return this.counter.setSurfaceTheme(theme);
+    }
+    const token = ++this.surfaceSwitchToken;
+    gsap.killTweensOf(this.surfaceExposure);
+    const preload =
+      this.counter.preloadSurfaceTheme?.(resolved) ?? Promise.resolve();
+    const dip = new Promise((resolve) => {
+      gsap.to(this.surfaceExposure, {
+        scale: 0.76,
+        duration: dipDur,
+        ease: "power2.in",
+        onUpdate: () => {
+          this.app.renderer.exposure =
+            this.baseExposure * this.surfaceExposure.scale;
+        },
+        onComplete: resolve,
+      });
+    });
+    await Promise.all([preload, dip]);
+    if (this.disposed || token !== this.surfaceSwitchToken) return;
+    await this.counter.setSurfaceTheme(theme);
+    if (this.disposed || token !== this.surfaceSwitchToken) return;
+    gsap.to(this.surfaceExposure, {
+      scale: 1,
+      duration: whenMotion(0.26),
+      ease: "power2.out",
+      onUpdate: () => {
+        this.app.renderer.exposure =
+          this.baseExposure * this.surfaceExposure.scale;
+      },
+    });
   }
   applyLightingRig(rig) {
     const { app, ctx } = this;
@@ -360,7 +400,8 @@ export class CounterScene {
     c.ambient.intensity = rig.ambient.intensity;
     c.environment.intensity = rig.environment.intensity;
     app.scene.environmentIntensity = rig.environment.intensity;
-    app.renderer.exposure = rig.post.exposure;
+    this.baseExposure = rig.post.exposure;
+    app.renderer.exposure = this.baseExposure * this.surfaceExposure.scale;
     if (ctx.post?.bloom) {
       ctx.post.bloom.strength = rig.post.bloomStrength;
     }
@@ -385,6 +426,7 @@ export class CounterScene {
     this.lightingState = target;
     this.lightingTween?.kill?.();
     this.lightingTween = null;
+    gsap.killTweensOf(this.surfaceExposure);
 
     const dur = immediate ? 0 : whenMotion(0.68);
     if (dur <= 0) {
@@ -670,13 +712,14 @@ export class CounterScene {
   }
   setEventClock(clock) {
     this.eventClock?.setEventClock(clock);
+    this.field?.setActiveFloorClock?.(clock);
   }
   setRouteView(activePage) {
     this.routeActive = Boolean(activePage);
     this.field.setSwept(this.routeActive);
     this.dice?.setSwept(this.routeActive);
     this.rope.setVisible(!this.routeActive);
-    if (this.clock?.object) this.clock.object.visible = !this.routeActive;
+    this.clock?.setRouteHidden?.(this.routeActive);
     this.eventClock?.setRouteHidden(this.routeActive);
   }
   setArchiveView(active, visibleIds = null) {
@@ -707,6 +750,14 @@ export class CounterScene {
         trayId: this.counter?.theme?.trayId ?? null,
         appliedKey: this.counter?.appliedThemeKey ?? null,
       },
+      eventClock: this.eventClock?.clock
+        ? {
+            noteId: this.eventClock.clock.noteId,
+            name: this.eventClock.clock.name,
+            value: this.eventClock.clock.value,
+            segments: this.eventClock.clock.segments,
+          }
+        : null,
       lighting: {
         ...(this.lightingState ?? {}),
         goboPatternActual: this.ctx.gobo?.pattern ?? null,
@@ -732,7 +783,11 @@ export class CounterScene {
         const diceButton = dbWorld ? project(dbWorld) : null;
         const cbWorld = c.clockButtonWorldPositions?.();
         const clockButtons = cbWorld
-          ? { minus: project(cbWorld.minus), plus: project(cbWorld.plus) }
+          ? {
+              minus: project(cbWorld.minus),
+              gauge: project(cbWorld.gauge),
+              plus: project(cbWorld.plus),
+            }
           : null;
         return {
           id: c.note.id,
@@ -750,6 +805,7 @@ export class CounterScene {
     this.disposed = true;
     this.lightingTween?.kill?.();
     this.lightingTween = null;
+    gsap.killTweensOf(this.surfaceExposure);
     this.cleanups.forEach((fn) => fn());
     this.dice?.dispose();
     this.projection?.dispose();

@@ -62,6 +62,7 @@ export function TrayOverlay({
   indentRect = null,
   hideHeader = false,
   headerContent,
+  exiting = false,
   children,
 }: {
   menu: TrayMenuKey;
@@ -70,15 +71,17 @@ export function TrayOverlay({
   indentRect?: IndentRect | null;
   hideHeader?: boolean;
   headerContent?: ReactNode;
+  exiting?: boolean;
   children: ReactNode;
 }) {
   useEffect(() => {
+    if (exiting) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, exiting]);
 
   const zone = TRAY_MENU_ZONES[menu];
   const stageStyle: CSSProperties | undefined = indentRect
@@ -102,14 +105,16 @@ export function TrayOverlay({
 
   return (
     <div
-      className="tray-overlay-stage"
+      className={`tray-overlay-stage ${exiting ? "exiting" : ""}`}
+      data-state={exiting ? "exiting" : "open"}
       style={stageStyle}
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!exiting && e.target === e.currentTarget) onClose();
       }}
     >
       <section
-        className={`tray-overlay-panel tray-overlay-${menu}`}
+        className={`tray-overlay-panel tray-overlay-${menu} ${exiting ? "exiting" : ""}`}
+        data-state={exiting ? "exiting" : "open"}
         style={panelStyle}
         role="dialog"
         aria-label={title}

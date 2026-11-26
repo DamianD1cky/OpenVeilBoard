@@ -27,8 +27,11 @@ export interface BoardCallbacks {
   onPinHover?: (id: string | null) => void;
   onDiceButtonHover?: (id: string | null) => void;
   onCardRoll?: (id: string) => void;
-  onClockButtonHover?: (hit: { noteId: string; delta: number } | null) => void;
+  onClockButtonHover?: (
+    hit: { noteId: string; action: "plus" | "minus" | "toggle"; delta: number } | null,
+  ) => void;
   onCardStepClock?: (id: string, delta: number) => void;
+  onCardToggleClockBackdrop?: (id: string) => void;
   canEdit: (note: Note) => boolean;
   canLink?: () => boolean;
   canRoll?: () => boolean;
@@ -399,10 +402,19 @@ export function FallbackBoard2D({
                           −
                         </button>
                       )}
-                      <span>
+                      <button
+                        type="button"
+                        className="card-clock-label"
+                        title="点击切换或隐藏台面底纹"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          callbacks.onCardToggleClockBackdrop?.(note.id);
+                        }}
+                      >
                         ◴ {clockCap.data.name || "事件钟"}{" "}
                         {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
-                      </span>
+                      </button>
                       {callbacks.canEdit(note) && (
                         <button
                           type="button"

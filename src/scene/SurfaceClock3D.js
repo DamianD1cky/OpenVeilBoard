@@ -12,6 +12,7 @@ import {
   formatClockDuration,
 } from "../features/campaign/domain/campaignClock.ts";
 import { clockText } from "../domain/clockText.ts";
+import { gsap, whenMotion } from "../shared/motion.js";
 export class SurfaceStamp {
   constructor(ctx, width, height, paper = false) {
     this.paper = paper;
@@ -79,7 +80,33 @@ export class SurfaceClock3D {
     this.stamp = new SurfaceStamp(ctx, 1.7, 0.085);
     this.object = this.stamp.object;
     this.hovered = false;
+    this.routeHidden = false;
     this.off = ctx.app.onFrame(() => this.frame());
+  }
+  setRouteHidden(hidden) {
+    const next = Boolean(hidden);
+    if (this.routeHidden === next) return;
+    this.routeHidden = next;
+    const mat = this.stamp.material;
+    gsap.killTweensOf(mat);
+    if (next) {
+      gsap.to(mat, {
+        opacity: 0,
+        duration: whenMotion(0.22),
+        ease: "power2.in",
+        onComplete: () => {
+          if (this.routeHidden) this.object.visible = false;
+        },
+      });
+    } else {
+      this.object.visible = true;
+      gsap.to(mat, {
+        opacity: 1,
+        duration: whenMotion(0.34),
+        delay: whenMotion(0.12),
+        ease: "power2.out",
+      });
+    }
   }
   setHover(on) {
     if (this.hovered === on) return;
@@ -132,6 +159,7 @@ export class SurfaceClock3D {
     );
   }
   dispose() {
+    gsap.killTweensOf(this.stamp.material);
     this.off();
     this.stamp.dispose();
   }

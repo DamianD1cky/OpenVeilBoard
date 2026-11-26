@@ -62,8 +62,30 @@ export class SurfaceEventClock3D {
   }
 
   setRouteHidden(hidden) {
-    this.routeHidden = Boolean(hidden);
-    this.object.visible = !this.routeHidden && Boolean(this.clock);
+    const next = Boolean(hidden);
+    if (this.routeHidden === next) return;
+    this.routeHidden = next;
+    gsap.killTweensOf(this.material);
+    if (next) {
+      gsap.to(this.material, {
+        opacity: 0,
+        duration: whenMotion(0.26),
+        ease: "power2.in",
+        onComplete: () => {
+          if (this.routeHidden || !this.clock) this.object.visible = false;
+        },
+      });
+    } else if (this.clock) {
+      this.object.visible = true;
+      gsap.to(this.material, {
+        opacity: this.baseOpacity || 0.9,
+        duration: whenMotion(0.38),
+        delay: whenMotion(0.15),
+        ease: "power2.out",
+      });
+    } else {
+      this.object.visible = false;
+    }
   }
 
   setEventClock(clock) {
@@ -87,7 +109,6 @@ export class SurfaceEventClock3D {
       });
       return;
     }
-    if (!this.routeHidden) this.object.visible = true;
     if (prevKey !== nextKey) {
       this.redraw();
     }
@@ -95,6 +116,12 @@ export class SurfaceEventClock3D {
     const isCritical = next.segments - next.value <= 1;
     const targetOpacity = isCritical ? 0.98 : ratio >= 0.5 ? 0.92 : 0.86;
     this.baseOpacity = targetOpacity;
+    if (this.routeHidden) {
+      this.object.visible = false;
+      this.material.opacity = 0;
+      return;
+    }
+    this.object.visible = true;
     gsap.killTweensOf(this.material);
     gsap.to(this.material, {
       opacity: targetOpacity,

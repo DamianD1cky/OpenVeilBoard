@@ -29,12 +29,14 @@ export function AccountDialog({
   onClose,
   onRefresh,
   indentRect = null,
+  exiting = false,
 }: {
   session: AppSession;
   room: ActiveCampaignAccess | null;
   onClose: () => void;
   onRefresh: () => Promise<void>;
   indentRect?: IndentRect | null;
+  exiting?: boolean;
 }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -75,6 +77,7 @@ export function AccountDialog({
       title="账号"
       onClose={onClose}
       indentRect={indentRect}
+      exiting={exiting}
     >
       <form
         className="tray-overlay-form"

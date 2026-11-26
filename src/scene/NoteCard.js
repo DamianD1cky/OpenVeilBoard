@@ -79,6 +79,7 @@ export class NoteCard {
     this.object.add(this.pin);
     this.pinHovered = false;
     this.pinSelected = false;
+    this.clockProjected = false;
     this._pinWorld = new Vector3();
     this.aim = { x: 0, z: 0, lift: 0, tilt: 0, scale: 1, yaw: 0 };
     this.avoid = { x: 0, z: 0, yaw: 0 };
@@ -125,11 +126,13 @@ export class NoteCard {
       note.color,
       note.capabilities,
       note.imageUrl,
+      this.clockProjected,
     ]);
     if (key !== this.textureKey) {
       this.textureKey = key;
       this.texture?.dispose();
-      this.texture = createNoteTexture(note);
+      const texOpts = { clockProjected: this.clockProjected };
+      this.texture = createNoteTexture(note, null, texOpts);
       this.material.map = this.texture;
       this.material.roughnessMap = noteRoughnessMap(note, false);
       const isPolaroid = note.cardStyle === "polaroid";
@@ -144,7 +147,7 @@ export class NoteCard {
         image.onload = () => {
           if (this.disposed || token !== this.imageToken) return;
           this.texture.dispose();
-          this.texture = createNoteTexture(note, image);
+          this.texture = createNoteTexture(note, image, texOpts);
           this.material.map = this.texture;
           this.material.roughnessMap = noteRoughnessMap(note, true);
           this.material.roughness = isPolaroid ? 0.44 : 0.64;
@@ -303,12 +306,20 @@ export class NoteCard {
     const wz = this.object.position.z - lx * Math.sin(yaw) + lz * Math.cos(yaw);
     return target.set(wx, this.object.position.y + 0.005, wz);
   }
+  setClockProjected(active) {
+    const next = Boolean(active);
+    if (this.clockProjected === next) return;
+    this.clockProjected = next;
+    if (this.note) {
+      this.update(this.note, this.width);
+    }
+  }
   clockHitTest(point) {
     if (!point || this.swept || this.burningAway || this.archiving || !this.note) {
-      return 0;
+      return null;
     }
     const layout = getClockStepUvRects(this.note);
-    if (!layout) return 0;
+    if (!layout) return null;
     const dx = point.x - this.object.position.x;
     const dz = point.z - this.object.position.z;
     const yaw = this.object.rotation.y;
@@ -317,12 +328,13 @@ export class NoteCard {
     const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
     const u = lx / (this.width * scale) + 0.5;
     const v = lz / (this.height * scale) + 0.5;
-    const pad = 0.024;
-    const inRect = (r) =>
+    const btnPad = 0.024;
+    const inRect = (r, pad = btnPad) =>
       u >= r.u0 - pad && u <= r.u1 + pad && v >= r.v0 - pad && v <= r.v1 + pad;
-    if (inRect(layout.plus)) return 1;
-    if (inRect(layout.minus)) return -1;
-    return 0;
+    if (inRect(layout.plus)) return "plus";
+    if (inRect(layout.minus)) return "minus";
+    if (inRect(layout.gauge, 0.012)) return "toggle";
+    return null;
   }
   clockButtonWorldPositions() {
     const layout = getClockStepUvRects(this.note);
@@ -340,6 +352,7 @@ export class NoteCard {
     };
     return {
       minus: toWorld(layout.minus),
+      gauge: toWorld(layout.gauge),
       plus: toWorld(layout.plus),
     };
   }
@@ -550,6 +563,55 @@ export class NoteCard {
       ease: "power3.out",
     });
   }
+  exitToWell(wellX, wellZ, delaySec = 0, done) {
+    this.printing = true;
+    this.archiving = true;
+    gsap.killTweensOf(this.object.position);
+    gsap.killTweensOf(this.object.scale);
+    gsap.killTweensOf(this.object.rotation);
+    if (this.exitWellAnim) gsap.killTweensOf(this.exitWellAnim);
+    this.wakeWiggle();
+    const startX = this.object.position.x;
+    const startY = this.object.position.y;
+    const startZ = this.object.position.z;
+    const targetY = this.floor + 0.025;
+    const travel = { t: 0 };
+    this.exitWellAnim = travel;
+    gsap.to(travel, {
+      t: 1,
+      duration: whenMotion(0.36),
+      delay: whenMotion(delaySec),
+      ease: "power3.in",
+      onUpdate: () => {
+        const t = travel.t;
+        const arc = Math.sin(t * Math.PI) * 0.055;
+        this.object.position.set(
+          startX + (wellX - startX) * t,
+          startY + (targetY - startY) * t + arc,
+          startZ + (wellZ - startZ) * t,
+        );
+      },
+      onComplete: () => {
+        this.archiving = false;
+        done?.();
+      },
+    });
+    gsap.to(this.object.scale, {
+      x: 0.28,
+      y: 0.28,
+      z: 0.28,
+      duration: whenMotion(0.34),
+      delay: whenMotion(delaySec),
+      ease: "power3.in",
+    });
+    gsap.to(this.object.rotation, {
+      x: 0,
+      y: 0,
+      duration: whenMotion(0.3),
+      delay: whenMotion(delaySec),
+      ease: "power2.in",
+    });
+  }
   returnToDesk(exitX, done) {
     this.printing = true;
     this.archiving = true;
@@ -697,8 +759,10 @@ export class NoteCard {
     this.disposed = true;
     this.off();
     if (this.burnAnim) gsap.killTweensOf(this.burnAnim);
+    if (this.exitWellAnim) gsap.killTweensOf(this.exitWellAnim);
     gsap.killTweensOf(this.object.position);
     gsap.killTweensOf(this.object.scale);
+    gsap.killTweensOf(this.object.rotation);
     this.wiggle.dispose();
     this.mesh.geometry.dispose();
     this.texture?.dispose();

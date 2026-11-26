@@ -23,12 +23,14 @@ export function EdgeDialog({
   role,
   onClose,
   indentRect = null,
+  exiting = false,
 }: {
   edge: NoteEdge;
   store: BoardStore;
   role: string;
   onClose: () => void;
   indentRect?: IndentRect | null;
+  exiting?: boolean;
 }) {
   const parsed = parseEdgeLabel(edge.label);
   const [text, setText] = useState(parsed.text);
@@ -43,6 +45,7 @@ export function EdgeDialog({
       menu="edge"
       title="关系纸签"
       onClose={onClose}
+      exiting={exiting}
       indentRect={indentRect}
     >
       {!readonly && (

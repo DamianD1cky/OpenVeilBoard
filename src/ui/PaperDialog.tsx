@@ -1,4 +1,12 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { prefersReducedMotion } from "./usePresence";
 export interface IndentRect {
   left: number;
   top: number;
@@ -32,6 +40,28 @@ export function PaperDialog({
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<number | null>(null);
+  const requestClose = useCallback(() => {
+    if (exitTimerRef.current !== null) return;
+    if (prefersReducedMotion()) {
+      onCloseRef.current();
+      return;
+    }
+    setExiting(true);
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null;
+      onCloseRef.current();
+    }, 185);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+  }, []);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     const node = ref.current!;
@@ -41,7 +71,7 @@ export function PaperDialog({
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onCloseRef.current();
+        requestClose();
       }
       if (!page && e.key === "Tab") {
         const controls = [
@@ -65,7 +95,7 @@ export function PaperDialog({
       document.removeEventListener("keydown", key);
       previous?.focus();
     };
-  }, [page]);
+  }, [page, requestClose]);
   if (page) {
     const stageStyle: CSSProperties = indentRect
       ? ({
@@ -88,14 +118,15 @@ export function PaperDialog({
         ref={ref}
         role="region"
         aria-label={title}
-        className={`in-frame-stage ${wide ? "wide" : ""} ${indentRect ? "projected" : ""}`}
+        className={`in-frame-stage ${wide ? "wide" : ""} ${indentRect ? "projected" : ""} ${exiting ? "exiting" : ""}`}
+        data-state={exiting ? "exiting" : "open"}
         style={stageStyle}
       >
         <div className="in-frame-corners">
           <button
             type="button"
             className="in-frame-back"
-            onClick={onClose}
+            onClick={requestClose}
           >
             {backLabel}
           </button>
@@ -103,7 +134,7 @@ export function PaperDialog({
             type="button"
             className="in-frame-close"
             aria-label="关闭"
-            onClick={onClose}
+            onClick={requestClose}
           >
             X
           </button>
@@ -114,9 +145,10 @@ export function PaperDialog({
   }
   return (
     <div
-      className="dialog-backdrop"
+      className={`dialog-backdrop ${exiting ? "exiting" : ""}`}
+      data-state={exiting ? "exiting" : "open"}
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
       <div
@@ -124,11 +156,12 @@ export function PaperDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`paper-dialog ${wide ? "wide" : ""}`}
+        className={`paper-dialog ${wide ? "wide" : ""} ${exiting ? "exiting" : ""}`}
+        data-state={exiting ? "exiting" : "open"}
       >
         <div className="dialog-heading">
           <h2>{title}</h2>
-          <button type="button" aria-label="关闭" onClick={onClose}>
+          <button type="button" aria-label="关闭" onClick={requestClose}>
             ×
           </button>
         </div>

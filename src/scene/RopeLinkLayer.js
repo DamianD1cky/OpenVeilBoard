@@ -16,6 +16,7 @@ import {
   parseEdgeLabel,
 } from "../domain/edgeRelations.ts";
 import { playSound } from "../features/audio/audioEngine.js";
+import { gsap, whenMotion } from "../shared/motion.js";
 
 const STRING_SEGMENTS = 10;
 const RADIAL_SEGMENTS = 6;
@@ -247,6 +248,8 @@ export class RopeLinkLayer {
     this.byNote = new Map();
     this.snapping = new Set();
     this.snappedEdgeIds = new Set();
+    this.routeVisible = true;
+    this.routeAlpha = { value: 1 };
     this.off = ctx.app.onFrame(
       (_, dt) => this.frame(Math.min(dt, 1 / 30)),
       -0.4,
@@ -335,9 +338,37 @@ export class RopeLinkLayer {
   }
 
   setVisible(visible) {
-    this.object.visible = visible;
-    if (visible) {
+    const next = Boolean(visible);
+    if (this.routeVisible === next) return;
+    this.routeVisible = next;
+    gsap.killTweensOf(this.routeAlpha);
+    if (!next) {
+      gsap.to(this.routeAlpha, {
+        value: 0,
+        duration: whenMotion(0.24),
+        ease: "power2.in",
+        onUpdate: () => this.applyHighlight(),
+        onComplete: () => {
+          if (!this.routeVisible) this.object.visible = false;
+        },
+      });
+    } else {
+      this.object.visible = true;
       for (const link of this.links.values()) this.wake(link);
+      this.applyHighlight();
+      gsap.to(this.routeAlpha, {
+        value: 1,
+        duration: whenMotion(0.32),
+        delay: whenMotion(0.22),
+        ease: "power2.out",
+        onStart: () => {
+          for (const link of this.links.values()) {
+            link.pluckAmp = Math.max(link.pluckAmp, 0.0028);
+            this.wake(link);
+          }
+        },
+        onUpdate: () => this.applyHighlight(),
+      });
     }
   }
 
@@ -365,15 +396,16 @@ export class RopeLinkLayer {
   }
 
   applyHighlight() {
+    const fade = this.routeAlpha?.value ?? 1;
     for (const link of this.links.values()) {
       const active = this.highlightedEdge
         ? link.edge.id === this.highlightedEdge
         : !this.highlighted ||
           link.edge.fromNoteId === this.highlighted ||
           link.edge.toNoteId === this.highlighted;
-      link.mesh.material.opacity = active ? 1 : 0.24;
+      link.mesh.material.opacity = (active ? 1 : 0.24) * fade;
       if (link.label) {
-        link.label.material.opacity = active ? 1 : 0.35;
+        link.label.material.opacity = (active ? 1 : 0.35) * fade;
         const hovered = this.highlightedEdge === link.edge.id;
         link.label.object.scale.setScalar(hovered ? 1.1 : 1);
       }
@@ -801,6 +833,7 @@ export class RopeLinkLayer {
 
   dispose() {
     this.off();
+    gsap.killTweensOf(this.routeAlpha);
     this.clearPreview();
     this.links.forEach((link) => this.destroy(link));
     this.snapping.forEach((link) => this.destroy(link));

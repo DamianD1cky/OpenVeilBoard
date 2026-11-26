@@ -15,11 +15,13 @@ export function ClockDialog({
   role,
   onClose,
   indentRect = null,
+  exiting = false,
 }: {
   store: BoardStore;
   role: string;
   onClose: () => void;
   indentRect?: IndentRect | null;
+  exiting?: boolean;
 }) {
   const [clock, setClock] = useState(
       materializeCampaignClock(store.getSnapshot().clock),
@@ -32,6 +34,7 @@ export function ClockDialog({
       title="战役时钟"
       onClose={onClose}
       indentRect={indentRect}
+      exiting={exiting}
     >
       <p className="tray-clock-display">{text}</p>
       <div className="tray-pill-row">
