@@ -185,14 +185,19 @@ export function Board({
     bridge = useRef<BoardCallbacks>(null!);
   const safe = (operation: Promise<unknown>) =>
     void operation.catch((cause) => setError(errorText(cause)));
-  const close = () => {
+  const close = (target?: "/" | "/archive") => {
     setOverlay(null);
     setEdge(null);
     setRoomMenu(false);
-    if (route.kind !== "home") {
+    const liveRoute = getBoardRoute();
+    if (liveRoute.kind !== "home") {
+      if (target === "/" || target === "/archive") {
+        navigateBoard(target);
+        return;
+      }
       const inspected =
-        route.kind === "note"
-          ? state.notes.find((n) => n.id === route.noteId)
+        liveRoute.kind === "note"
+          ? store.getSnapshot().notes.find((n) => n.id === liveRoute.noteId)
           : null;
       navigateBoard(inspected?.archivedAt ? "/archive" : "/");
     }

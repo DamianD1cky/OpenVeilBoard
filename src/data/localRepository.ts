@@ -202,22 +202,12 @@ function demoNotes(campaignId: string) {
   const contents = [
     [
       "灰雾港 · 第七夜",
-      "雨停之前，所有线索都留在这张桌上。\n午夜钟响后，旧码头会重新开门。",
+      "雨停之前，所有线索都留在这张桌上。\n- [x] 核对灯塔值班记录\n- [ ] 找到码头的第二把钥匙\n- [ ] 问询钟表匠",
       -0.29,
       -0.02,
       "dossier",
       "yellow",
       [
-        {
-          type: "checklist",
-          data: {
-            items: [
-              { id: "a", text: "核对灯塔值班记录", done: true },
-              { id: "b", text: "找到码头的第二把钥匙", done: false },
-              { id: "c", text: "问询钟表匠", done: false },
-            ],
-          },
-        },
         {
           type: "event_clock",
           data: {
@@ -239,7 +229,7 @@ function demoNotes(campaignId: string) {
       0.06,
       "note",
       "blue",
-      [{ type: "comments", data: { entries: [] } }],
+      [],
     ],
     [
       "潮水正在上涨",

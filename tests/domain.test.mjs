@@ -251,8 +251,11 @@ test("失败后显示服务器状态与明确错误", async () => {
   assert.equal(h.store.getSnapshot().notes[0].title, "线索");
   h.store.dispose();
 });
-test("能力契约覆盖七类，权限占位与 GM 读取一致", () => {
-  assert.equal(capabilityRegistry.all().length, 7);
+test("能力契约保留三类核心机制，权限占位与 GM 读取一致", () => {
+  assert.deepEqual(
+    capabilityRegistry.all().map((p) => p.type),
+    ["event_clock", "dice_action", "secret"],
+  );
   const n = {
     capabilities: [
       {
@@ -318,7 +321,9 @@ test("短内容便签自适应收窄高度，拍立得保持经典比例", () =>
     cardStyle: "note",
     title: "钟表匠留下的长篇调查记录",
     body: "第一段线索说明\n第二段目击证词与地址信息\n第三段潮汐时间推演与地下室入口分析\n第四段补充附注说明",
-    capabilities: [{ type: "checklist", enabled: true, data: { items: [] } }],
+    capabilities: [
+      { type: "event_clock", enabled: true, data: { segments: 6, value: 2 } },
+    ],
   };
   const polaroid = {
     cardStyle: "polaroid",

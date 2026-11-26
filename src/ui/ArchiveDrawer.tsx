@@ -44,10 +44,7 @@ export function ArchiveDrawer({
         if (filter && !n.capabilities.some((c) => c.enabled && c.type === filter))
           return false;
         if (!q) return true;
-        const text = `${n.title} ${n.body} ${n.capabilities
-          .filter((c) => c.type === "tags")
-          .flatMap((c) => c.data.tags ?? [])
-          .join(" ")}`.toLowerCase();
+        const text = `${n.title} ${n.body}`.toLowerCase();
         return text.includes(q);
       })
       .sort(
@@ -232,8 +229,9 @@ export function ArchiveDrawer({
           {pageItems.map((note, idx) => {
             const canRestore =
               role !== "observer" && (note.authorId === userId || role === "gm");
-            const enabled = note.capabilities.filter((c) => c.enabled);
-            const shown = enabled.slice(0, enabled.length > 3 ? 2 : 3);
+            const clockCap = note.capabilities.find(
+              (c) => c.enabled && c.type === "event_clock",
+            );
             const rot = (idx % 2 === 0 ? 1 : -1) * (0.6 + (idx % 3) * 0.35);
             return (
               <article
@@ -271,16 +269,13 @@ export function ArchiveDrawer({
                 )}
                 <h3>{note.title}</h3>
                 <p>{note.body.replace(/[#*`>]/g, "")}</p>
-                <div className="paper-badges">
-                  {shown.map((c) => {
-                    const plugin = capabilityRegistry.get(c.type);
-                    return (
-                      <span key={c.id}>
-                        {plugin?.icon} {plugin?.getHoverSummary(c.data)?.value}
-                      </span>
-                    );
-                  })}
-                </div>
+                {clockCap && (
+                  <div className="paper-badges">
+                    <span>
+                      ◴ {clockCap.data.name || "事件钟"} {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
+                    </span>
+                  </div>
+                )}
               </article>
             );
           })}

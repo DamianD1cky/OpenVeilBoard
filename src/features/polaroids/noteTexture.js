@@ -9,7 +9,6 @@ import {
   paintPolaroidCrease,
   paintPhotoOverlay,
 } from "./polaroidAging.js";
-import { capabilityRegistry } from "../../domain/capabilityRegistry.ts";
 import { paperColor, darkPaper } from "../../domain/paperColors.js";
 import { paperAspect as cardAspect } from "../../domain/geometry.js";
 export { paperAspect as cardAspect } from "../../domain/geometry.js";
@@ -435,6 +434,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
 
   let top = 114;
   const enabledCaps = (note.capabilities ?? []).filter((c) => c.enabled);
+  const clockCap = enabledCaps.find((c) => c.type === "event_clock");
 
   if (note.cardStyle === "dossier") {
     // Classic index dossier header band + faint ruled lines
@@ -451,7 +451,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
       ? "rgba(241, 229, 203, 0.12)"
       : "rgba(68, 60, 48, 0.15)";
     ctx.lineWidth = 1.6;
-    const ruleStop = height - (enabledCaps.length > 0 ? 102 : 44);
+    const ruleStop = height - (clockCap ? 102 : 44);
     for (let y = 196; y < ruleStop; y += 64) {
       ctx.beginPath();
       ctx.moveTo(44, y);
@@ -565,7 +565,6 @@ function drawNoteToCanvas(canvas, note, image = null) {
   }
 
   // Clean horizontal segmented tally bar for notes carrying an event clock (no pie circle)
-  const clockCap = enabledCaps.find((c) => c.type === "event_clock");
   if (clockCap && !isPolaroid) {
     const segs = Math.max(2, Math.min(24, Number(clockCap.data?.segments) || 6));
     const val = Math.max(0, Math.min(segs, Number(clockCap.data?.value) || 0));
@@ -615,7 +614,7 @@ function drawNoteToCanvas(canvas, note, image = null) {
     const title = wrapText(ctx, note.title, width - 92, 2);
     title.forEach((line, i) => ctx.fillText(line, 46, top + i * 62));
     top += title.length * 62 + 22;
-    const footerReserve = enabledCaps.length > 0 ? 104 : 44;
+    const footerReserve = clockCap ? 102 : 44;
     const maxLines = Math.max(
       0,
       Math.min(5, Math.floor((height - top - footerReserve) / 56)),
@@ -630,22 +629,6 @@ function drawNoteToCanvas(canvas, note, image = null) {
     });
   }
   ctx.restore();
-
-  // Capability badges
-  ctx.font = '26px "PingFang SC", sans-serif';
-  ctx.fillStyle = dark ? "#e2cfb1" : "#655844";
-  const capabilities = enabledCaps;
-  const shown = capabilities.slice(0, capabilities.length > 3 ? 2 : 3);
-  shown.forEach((cap, i) =>
-    capabilityRegistry.get(cap.type)?.drawSurfaceBadge(ctx, cap.data, {
-      x: 46 + i * 218,
-      y: height - 86,
-      width: 206,
-      height: 48,
-    }),
-  );
-  if (capabilities.length > 3)
-    ctx.fillText(`+${capabilities.length - 2}`, width - 98, height - 53);
 }
 
 export function createNoteTexture(note, image = null) {

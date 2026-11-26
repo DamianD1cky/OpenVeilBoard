@@ -1,13 +1,6 @@
 import type { CampaignClockConfig } from "../features/campaign/domain/campaignClock";
 import type { DiceRoll } from "../features/dice/types";
-export type CapabilityType =
-  | "checklist"
-  | "event_clock"
-  | "dice_action"
-  | "comments"
-  | "secret"
-  | "resources"
-  | "tags";
+export type CapabilityType = "event_clock" | "dice_action" | "secret";
 export type CardStyle = "polaroid" | "note" | "dossier" | "urgent";
 export type PinColor = "red" | "blue" | "green" | "yellow" | "black";
 export type BurnMode = "none" | "scorched" | "burning";

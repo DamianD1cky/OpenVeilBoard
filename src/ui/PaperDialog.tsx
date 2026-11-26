@@ -30,6 +30,8 @@ export function PaperDialog({
   indentRect?: IndentRect | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     const node = ref.current!;
@@ -39,7 +41,7 @@ export function PaperDialog({
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
       if (!page && e.key === "Tab") {
         const controls = [

@@ -84,7 +84,7 @@ export function Inspector({
   scene?: any;
   userId: string;
   role: string;
-  onClose: () => void;
+  onClose: (target?: "/" | "/archive") => void;
   onDelete?: (id: string) => void;
   onRoll: (notation: string, label: string, noteId?: string) => Promise<void>;
   edges?: NoteEdge[];
@@ -110,6 +110,7 @@ export function Inspector({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showTools, setShowTools] = useState(false);
+  const [editorExpanded, setEditorExpanded] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -174,7 +175,7 @@ export function Inspector({
   // Sync WebGPU recessed-tray optical projection whenever draft media changes
   useEffect(() => {
     if (!scene?.setNoteProjection) return;
-    if (sealed) {
+    if (sealed || editorExpanded) {
       scene.setNoteProjection({ active: false, items: [] });
       return;
     }
@@ -188,7 +189,7 @@ export function Inspector({
       })),
       selectedIndex: safeSlideIndex,
     });
-  }, [scene, sealed, mediaItems, safeSlideIndex]);
+  }, [scene, sealed, editorExpanded, mediaItems, safeSlideIndex]);
 
   useEffect(() => {
     return () => {
@@ -205,7 +206,7 @@ export function Inspector({
       return;
     }
     const el = projectionHitRef.current;
-    if (!el || sealed || mediaItems.length === 0) {
+    if (!el || sealed || editorExpanded || mediaItems.length === 0) {
       scene.setNoteProjectionBounds(null);
       return;
     }
@@ -232,7 +233,21 @@ export function Inspector({
       ro?.disconnect();
       window.removeEventListener("resize", syncBounds);
     };
-  }, [scene, indentRect, sealed, mediaItems.length]);
+  }, [scene, indentRect, sealed, editorExpanded, mediaItems.length]);
+
+  // Capture Escape when editor is expanded so it restores split view first
+  useEffect(() => {
+    if (!editorExpanded || lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setEditorExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editorExpanded, lightboxOpen]);
 
   // Capture Escape when lightbox is open so it returns to floor projection first
   useEffect(() => {
@@ -447,7 +462,7 @@ export function Inspector({
       ? [{ id: "burn", text: BURN_LABELS[draft.burn.mode] }]
       : []),
     ...draft.capabilities
-      .filter((c) => c.enabled)
+      .filter((c) => c.enabled && (c.type === "event_clock" || c.type === "secret"))
       .map((c) => {
         const summary = capabilityRegistry.get(c.type)?.getHoverSummary(c.data);
         return summary
@@ -478,7 +493,7 @@ export function Inspector({
         </div>
       ) : (
         <fieldset
-          className={`editor-fields note-stage ${hasProjection ? "has-media" : "no-media"}`}
+          className={`editor-fields note-stage ${hasProjection ? "has-media" : "no-media"} ${editorExpanded ? "is-expanded" : ""}`}
           disabled={busy}
         >
           {/* Left-Top: Recessed-tray Optical Projection Stage */}
@@ -641,7 +656,9 @@ export function Inspector({
 
           {/* Right Column: Notion-Style Rich Editor, Meta Pills, Controls & Capabilities Drawer */}
           <div className="note-meta-col">
-            <div className="note-meta-body-wrap is-notion">
+            <div
+              className={`note-meta-body-wrap is-notion ${editorExpanded ? "is-expanded" : ""}`}
+            >
               <NotionNoteEditor
                 value={draft.body}
                 readonly={readonly}
@@ -654,37 +671,64 @@ export function Inspector({
                 }}
                 onAddCapability={readonly ? undefined : addCapabilityQuick}
               />
-            </div>
-
-            <div className="note-pills-row">
               <button
                 type="button"
-                className="about-pill"
-                onClick={() => setShowTools((v) => !v)}
+                className="note-expand-btn"
+                aria-expanded={editorExpanded}
+                aria-label={editorExpanded ? "缩小编辑框" : "扩大编辑框"}
+                title={editorExpanded ? "恢复默认大小 (Esc)" : "扩大编辑框"}
+                onClick={() => setEditorExpanded((v) => !v)}
               >
-                {STYLE_LABELS[draft.cardStyle]}
+                {editorExpanded ? (
+                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                    <path
+                      d="M6 2v4H2M10 14v-4h4M2 10h4v4M14 6h-4V2"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                    <path
+                      d="M10 2h4v4M6 14H2v-4M14 2l-4.5 4.5M2 14l4.5-4.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
               </button>
-              {pills.map((pill) => (
-                <button
-                  key={pill.id}
-                  type="button"
-                  className="about-pill"
-                  onClick={() => setShowTools(true)}
-                >
-                  {pill.text}
-                </button>
-              ))}
-              {edges.map((edge) => (
-                <button
-                  key={edge.id}
-                  type="button"
-                  className="about-pill"
-                  onClick={() => onEdge?.(edge)}
-                >
-                  {edge.label || "编辑连线"}
-                </button>
-              ))}
             </div>
+
+            {(pills.length > 0 || edges.length > 0) && (
+              <div className="note-pills-row">
+                {pills.map((pill) => (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    className="about-pill"
+                    onClick={() => setShowTools(true)}
+                  >
+                    {pill.text}
+                  </button>
+                ))}
+                {edges.map((edge) => (
+                  <button
+                    key={edge.id}
+                    type="button"
+                    className="about-pill"
+                    onClick={() => onEdge?.(edge)}
+                  >
+                    {edge.label || "编辑连线"}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <nav className="note-links-row" aria-label="便签操作">
               <button
@@ -693,22 +737,28 @@ export function Inspector({
                 aria-expanded={showTools}
                 onClick={() => setShowTools((v) => !v)}
               >
-                {showTools ? "收起属性" : "属性 · 燃烧 · 能力"}
+                {showTools ? "收起属性" : "属性"}
               </button>
               {note && !readonly && (
                 <button
                   type="button"
                   className="about-link"
+                  disabled={busy}
                   onClick={async () => {
+                    if (busy) return;
+                    setBusy(true);
+                    setError("");
                     try {
                       await store.patch(note.id, {
                         archivedAt: note.archivedAt
                           ? null
                           : new Date().toISOString(),
                       });
-                      onClose();
+                      onClose("/");
                     } catch (cause) {
                       setError(errorText(cause));
+                    } finally {
+                      setBusy(false);
                     }
                   }}
                 >
@@ -965,47 +1015,8 @@ export function Inspector({
                           readonly={locked}
                           userId={userId}
                           isGM={role === "gm"}
-                          canAct={
-                            role !== "observer" &&
-                            (cap.type !== "comments" ||
-                              Boolean(
-                                note?.capabilities.some((c) => c.id === cap.id),
-                              ))
-                          }
+                          canAct={role !== "observer"}
                           members={store.getSnapshot().members}
-                          onComment={
-                            note &&
-                            note.capabilities.some((c) => c.id === cap.id)
-                              ? async (body, deleteId) => {
-                                  const saved = await store.comment(
-                                    note.id,
-                                    cap.id,
-                                    body,
-                                    deleteId,
-                                  );
-                                  baseline.current.capabilities =
-                                    baseline.current.capabilities.map(
-                                      (c: any) =>
-                                        c.id === cap.id
-                                          ? (saved.capabilities.find(
-                                              (v) => v.id === cap.id,
-                                            ) ?? c)
-                                          : c,
-                                    );
-                                  setDraft((previous) => ({
-                                    ...previous,
-                                    capabilities: previous.capabilities.map(
-                                      (c) =>
-                                        c.id === cap.id
-                                          ? (saved.capabilities.find(
-                                              (v) => v.id === cap.id,
-                                            ) ?? c)
-                                          : c,
-                                    ),
-                                  }));
-                                }
-                              : undefined
-                          }
                           onChange={(data) =>
                             setDraft({
                               ...draft,

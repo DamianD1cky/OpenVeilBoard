@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import type { Note, NoteEdge } from "../domain/types";
-import { capabilityRegistry } from "../domain/capabilityRegistry";
 import { visibleEdges, paperAspect } from "../domain/geometry.js";
 import {
   computeAvoidanceOffsets,
@@ -290,9 +289,10 @@ export function FallbackBoard2D({
       {notes
         .filter((n) => !n.archivedAt)
         .map((note) => {
-          const p = point(note),
-            enabled = note.capabilities.filter((c) => c.enabled),
-            shown = enabled.slice(0, enabled.length > 3 ? 2 : 3);
+          const p = point(note);
+          const clockCap = note.capabilities.find(
+            (c) => c.enabled && c.type === "event_clock",
+          );
           return (
             <article
               tabIndex={disabled ? -1 : 0}
@@ -355,17 +355,13 @@ export function FallbackBoard2D({
               )}
               <h3>{note.title}</h3>
               <p>{note.body.replace(/[#*`>]/g, "")}</p>
-              <div className="paper-badges">
-                {shown.map((c) => {
-                  const plugin = capabilityRegistry.get(c.type);
-                  return (
-                    <span key={c.id}>
-                      {plugin?.icon} {plugin?.getHoverSummary(c.data)?.value}
-                    </span>
-                  );
-                })}
-                {enabled.length > 3 && <span>+{enabled.length - 2}</span>}
-              </div>
+              {clockCap && (
+                <div className="paper-badges">
+                  <span>
+                    ◴ {clockCap.data.name || "事件钟"} {clockCap.data.value ?? 0}/{clockCap.data.segments ?? 6}
+                  </span>
+                </div>
+              )}
             </article>
           );
         })}
