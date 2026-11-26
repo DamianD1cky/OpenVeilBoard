@@ -241,6 +241,7 @@ export function SurfaceThemeDrawer({
       headerContent={headerTabs}
       onClose={onClose}
       indentRect={indentRect}
+      exiting={exiting}
     >
       {tab === "surface" ? (
         <>

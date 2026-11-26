@@ -24,6 +24,7 @@ import {
   type SurfaceDrawerTab,
 } from "./SurfaceThemeDrawer";
 import { TrayOverlay, TRAY_MENU_ZONES } from "./TrayOverlay";
+import { usePresence, usePreservedValue } from "./usePresence";
 import { canReadNote } from "../domain/capabilityRegistry";
 import { playSound } from "../features/audio/audioEngine.js";
 import {
@@ -757,6 +758,25 @@ export function Board({
       (lighting.brightness < 0.94 && lighting.contrast > 1.25),
   );
   const showCornerBar = route.kind === "home";
+  const roomMenuOpen = roomMenu && showCornerBar;
+  const roomMenuPresence = usePresence(roomMenuOpen, 185);
+  const surfacePresence = usePresence(overlay === "surface", 185);
+  const clockPresence = usePresence(overlay === "clock", 185);
+  const dicePresence = usePresence(overlay === "dice", 185);
+  const edgePresence = usePresence(Boolean(edge), 185);
+  const edgeShown = usePreservedValue(edge, Boolean(edge));
+  const archivePresence = usePresence(route.kind === "archive", 185);
+  const quickEdgeOpen = Boolean(quickEdge && !activeModal && room.role !== "observer");
+  const quickEdgePresence = usePresence(quickEdgeOpen, 155);
+  const quickEdgeShown = usePreservedValue(quickEdge, quickEdgeOpen);
+  const dockHintOpen = Boolean(
+    hoveredDice && !activeModal && !isArchiveView && diceDocked,
+  );
+  const dockHintPresence = usePresence(dockHintOpen, 145);
+  const dockHintShown = usePreservedValue(hoveredDice, dockHintOpen);
+  const resultOpen = Boolean(result?.result && !activeModal && !isArchiveView);
+  const resultPresence = usePresence(resultOpen, 155);
+  const resultShown = usePreservedValue(result, resultOpen);
   const floorClockHidden =
     !showCornerBar ||
     Boolean(
@@ -873,11 +893,12 @@ export function Board({
           </div>
         </div>
       )}
-      {roomMenu && showCornerBar && (
+      {roomMenuPresence.mounted && (
         <TrayOverlay
           menu="roomMenu"
           title="房间菜单"
           hideHeader
+          exiting={roomMenuPresence.state === "exiting"}
           onClose={() => setRoomMenu(false)}
           indentRect={indentRect}
         >
@@ -960,9 +981,9 @@ export function Board({
         raised={diceDocked}
         indentRect={indentRect}
       />
-      {quickEdge && !activeModal && room.role !== "observer" && (
+      {quickEdgePresence.mounted && quickEdgeShown && (
         <div
-          className="edge-quick-bar"
+          className={`edge-quick-bar ${quickEdgePresence.state === "exiting" ? "exiting" : ""}`}
           role="region"
           aria-label="挂上关系纸签"
           style={
@@ -1005,8 +1026,8 @@ export function Board({
               }
               void applyQuickEdge(
                 quickText.trim(),
-                quickEdge.style,
-                quickEdge.color,
+                quickEdgeShown.style,
+                quickEdgeShown.color,
                 quickDir,
               );
             }}
@@ -1044,11 +1065,15 @@ export function Board({
           </form>
         </div>
       )}
-      {hoveredDice && !activeModal && !isArchiveView && diceDocked && (
-        <div className="dice-dock-hint" style={dockHintStyle} role="status">
+      {dockHintPresence.mounted && dockHintShown && (
+        <div
+          className={`dice-dock-hint ${dockHintPresence.state === "exiting" ? "exiting" : ""}`}
+          style={dockHintStyle}
+          role="status"
+        >
           <strong>
-            点击重投 · {hoveredDice.label ? `${hoveredDice.label} ` : ""}
-            {hoveredDice.notation}
+            点击重投 · {dockHintShown.label ? `${dockHintShown.label} ` : ""}
+            {dockHintShown.notation}
           </strong>
           <span>右键换公式</span>
         </div>
@@ -1108,7 +1133,7 @@ export function Board({
           <p className="empty-box">这张便签可能已被移除或归属其他房间。</p>
         </PaperDialog>
       )}
-      {route.kind === "archive" && (
+      {archivePresence.mounted && (
         <ArchiveDrawer
           notes={state.notes}
           store={store}
@@ -1118,15 +1143,17 @@ export function Board({
           onClose={close}
           onInspect={inspect}
           indentRect={indentRect}
+          exiting={archivePresence.state === "exiting"}
         />
       )}
-      {overlay === "surface" && (
+      {surfacePresence.mounted && (
         <SurfaceThemeDrawer
           theme={surfaceTheme}
           lighting={lighting}
           initialTab={surfaceTab}
           onTabChange={setSurfaceTab}
           indentRect={indentRect}
+          exiting={surfacePresence.state === "exiting"}
           onChange={(next) => {
             setSurfaceTheme(next);
             saveSurfaceTheme(room.campaignId, next);
@@ -1139,29 +1166,32 @@ export function Board({
           onClose={() => setOverlay(null)}
         />
       )}
-      {overlay === "clock" && (
+      {clockPresence.mounted && (
         <ClockDialog
           store={store}
           role={room.role}
           onClose={close}
           indentRect={indentRect}
+          exiting={clockPresence.state === "exiting"}
         />
       )}
-      {edge && (
+      {edgePresence.mounted && edgeShown && (
         <EdgeDialog
-          edge={edge}
+          edge={edgeShown}
           store={store}
           role={room.role}
           onClose={close}
           indentRect={indentRect}
+          exiting={edgePresence.state === "exiting"}
         />
       )}
-      {overlay === "dice" && (
+      {dicePresence.mounted && (
         <TrayOverlay
           menu="dice"
           title="投掷骰子"
           onClose={close}
           indentRect={indentRect}
+          exiting={dicePresence.state === "exiting"}
         >
           <div className="dice-preset-grid">
             {DICE_PRESETS.map((notation) => (
@@ -1239,9 +1269,9 @@ export function Board({
           </form>
         </TrayOverlay>
       )}
-      {result?.result && !activeModal && !isArchiveView && (
+      {resultPresence.mounted && resultShown?.result && (
         <div
-          className="dice-result"
+          className={`dice-result ${resultPresence.state === "exiting" ? "exiting" : ""}`}
           role="status"
           style={
             indentRect
@@ -1253,15 +1283,15 @@ export function Board({
           }
         >
           <span className="dice-result-readout">
-            {result.label && `${result.label} · `}
-            {result.notation} = <strong>{result.result.total}</strong>
+            {resultShown.label && `${resultShown.label} · `}
+            {resultShown.notation} = <strong>{resultShown.result.total}</strong>
           </span>
           <i className="dice-result-sep" aria-hidden="true" />
           {room.role !== "observer" && (
             <button
               type="button"
               disabled={savingRollNote}
-              onClick={() => void saveRollAsPolaroid(result)}
+              onClick={() => void saveRollAsPolaroid(resultShown)}
             >
               {savingRollNote ? "拍摄中…" : "贴成便签"}
             </button>

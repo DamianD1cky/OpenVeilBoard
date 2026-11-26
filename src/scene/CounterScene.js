@@ -426,7 +426,6 @@ export class CounterScene {
     this.lightingState = target;
     this.lightingTween?.kill?.();
     this.lightingTween = null;
-    gsap.killTweensOf(this.surfaceExposure);
 
     const dur = immediate ? 0 : whenMotion(0.68);
     if (dur <= 0) {

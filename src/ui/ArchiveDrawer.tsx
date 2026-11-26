@@ -16,6 +16,7 @@ export function ArchiveDrawer({
   userId,
   role,
   indentRect = null,
+  exiting = false,
 }: {
   store: BoardStore;
   notes: Note[];
@@ -25,6 +26,7 @@ export function ArchiveDrawer({
   userId: string;
   role: string;
   indentRect?: IndentRect | null;
+  exiting?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("");
@@ -69,11 +71,15 @@ export function ArchiveDrawer({
   // Sync visible archived note IDs directly to the 3D WebGPU tabletop grid
   useEffect(() => {
     if (!scene?.setArchiveView) return;
+    if (exiting) {
+      scene.setArchiveView(false);
+      return;
+    }
     scene.setArchiveView(
       true,
       pageItems.map((n) => n.id),
     );
-  }, [scene, visibleIdsKey]);
+  }, [scene, visibleIdsKey, exiting]);
 
   useEffect(() => {
     return () => {
@@ -82,6 +88,7 @@ export function ArchiveDrawer({
   }, [scene]);
 
   useEffect(() => {
+    if (exiting) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -90,7 +97,7 @@ export function ArchiveDrawer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, exiting]);
 
   const restore = async (id: string) => {
     try {
@@ -120,7 +127,8 @@ export function ArchiveDrawer({
 
   return (
     <div
-      className={`archive-tray-layer ${scene ? "mode-3d" : "mode-2d"}`}
+      className={`archive-tray-layer ${scene ? "mode-3d" : "mode-2d"} ${exiting ? "exiting" : ""}`}
+      data-state={exiting ? "exiting" : "open"}
       role="region"
       aria-label={`便签盒，共 ${totalArchived} 枚已归档便签`}
     >

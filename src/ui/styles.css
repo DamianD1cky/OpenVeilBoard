@@ -4830,6 +4830,84 @@ body:has(.note-lightbox-overlay) .corner-bar,
   }
 }
 
+/* ---------- Symmetric Exit Transitions & Surface Ink Morph ---------- */
+@keyframes in-frame-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes paper-close {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+.tray-overlay-stage.exiting,
+.tray-overlay-stage[data-state="exiting"] {
+  pointer-events: none !important;
+}
+.tray-overlay-panel.exiting,
+.tray-overlay-panel[data-state="exiting"] {
+  pointer-events: none !important;
+  animation: in-frame-exit 0.18s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.in-frame-stage.exiting,
+.in-frame-stage[data-state="exiting"] {
+  pointer-events: none !important;
+  animation: in-frame-exit 0.18s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.dialog-backdrop.exiting,
+.dialog-backdrop[data-state="exiting"] {
+  pointer-events: none !important;
+  animation: fade-out 0.18s ease forwards !important;
+}
+.paper-dialog.exiting,
+.paper-dialog[data-state="exiting"] {
+  pointer-events: none !important;
+  animation: paper-close 0.18s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.archive-tray-layer.exiting,
+.archive-tray-layer[data-state="exiting"] {
+  pointer-events: none !important;
+}
+.archive-tray-layer.exiting .archive-tray-bar,
+.archive-tray-layer.exiting .archive-tray-empty,
+.archive-tray-layer.exiting .archive-tray-grid {
+  pointer-events: none !important;
+  animation: in-frame-exit 0.18s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.edge-quick-bar.exiting,
+.dice-result.exiting,
+.dice-dock-hint.exiting {
+  pointer-events: none !important;
+  animation: fade-out 0.15s ease forwards !important;
+}
+.corner-bar,
+.corner-bar button,
+.tray-auth-stage,
+.tray-overlay-panel,
+.in-frame-stage,
+.archive-tray-bar {
+  transition: color 0.28s ease, border-color 0.28s ease, text-shadow 0.28s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,

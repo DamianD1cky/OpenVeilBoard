@@ -9,6 +9,7 @@ import { AuthSplash } from "./ui/AuthSplash";
 import { RoomLobby } from "./ui/RoomLobby";
 import { AccountDialog } from "./ui/AccountDialog";
 import { Board } from "./ui/Board";
+import { usePresence } from "./ui/usePresence";
 import type { IndentRect } from "./ui/PaperDialog";
 import {
   applyTrayInkTokens,
@@ -147,6 +148,10 @@ function Application({
       );
     setRoom(next);
   };
+  const accountPresence = usePresence(
+    Boolean(account && session && !demo),
+    185,
+  );
   return (
     <>
       {!session ? (
@@ -181,13 +186,14 @@ function Application({
           indentRect={indentRect}
         />
       )}
-      {account && session && !demo && (
+      {accountPresence.mounted && session && !demo && (
         <AccountDialog
           session={session}
           room={room}
           onClose={() => setAccount(false)}
           onRefresh={refresh}
           indentRect={indentRect}
+          exiting={accountPresence.state === "exiting"}
         />
       )}
     </>
